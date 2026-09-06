@@ -1,0 +1,100 @@
+name: Fossify Phone filtered build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read pinned upstream
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          source UPSTREAM.env
+          {
+            echo "repo=$FOSSIFY_PHONE_REPO"
+            echo "tag=$FOSSIFY_PHONE_TAG"
+            echo "commit=$FOSSIFY_PHONE_COMMIT"
+            echo "patch_version=$PATCH_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch exact Fossify Phone release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ steps.upstream.outputs.tag }}" \
+            "${{ steps.upstream.outputs.repo }}" upstream-phone
+          ACTUAL="$(git -C upstream-phone rev-parse HEAD)"
+          echo "Fossify Phone upstream commit: $ACTUAL"
+          test "$ACTUAL" = "${{ steps.upstream.outputs.commit }}"
+
+      - name: Apply filter patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream-phone apply --check "$GITHUB_WORKSPACE/patches/0001-device-davx-sim-filter.patch"
+          git -C upstream-phone apply "$GITHUB_WORKSPACE/patches/0001-device-davx-sim-filter.patch"
+          git -C upstream-phone diff --check
+
+      - name: Configure fixed release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp signing/keystore.properties upstream-phone/keystore.properties
+          mkdir -p upstream-phone/app/signing
+          cp signing/fossify-phone-filter.jks upstream-phone/app/signing/fossify-phone-filter.jks
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          set -o pipefail
+
+      - name: Build filtered Fossify Phone release APK
+        working-directory: upstream-phone
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleFossRelease --no-daemon --stacktrace
+
+      - name: Verify and stage APK
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_IN="$(find upstream-phone/app/build/outputs/apk/foss/release -type f -name '*.apk' | head -1)"
+          test -n "$APK_IN" && test -f "$APK_IN"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_IN"
+          OUT="Fossify-Phone-filter-${{ steps.upstream.outputs.patch_version }}-${{ steps.upstream.outputs.tag }}.apk"
+          cp "$APK_IN" "$OUT"
+          sha256sum "$OUT"
+          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fossify-Phone-filter-${{ steps.upstream.outputs.patch_version }}
+          path: ${{ steps.artifact.outputs.apk }}
+          if-no-files-found: error

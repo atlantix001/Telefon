@@ -342,6 +342,98 @@ index 3a2bd0c..dcd900d 100644
      val simpleContacts = "org.fossify.contacts"
      val simpleContactsDebug = "org.fossify.contacts.debug"
      val isPrivateContact = contact.rawId > FIRST_CONTACT_ID
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+new file mode 100644
+index 0000000..f526c9b
+--- /dev/null
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -0,0 +1,86 @@
++package org.fossify.phone.extensions
++
++import android.content.Context
++import org.fossify.commons.extensions.getVisibleContactSources
++import org.fossify.commons.helpers.ContactsHelper
++import org.fossify.commons.helpers.SMT_PRIVATE
++import org.fossify.commons.models.contacts.Contact
++import org.fossify.commons.models.contacts.ContactSource
++import org.fossify.phone.R
++import org.fossify.phone.helpers.getSimPhonebookContactSources
++import org.fossify.phone.helpers.getSimPhonebookContacts
++
++private const val DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE = "at.bitfire.davdroid.address_book"
++
++/**
++ * Hard allow-list used by the custom Phone build.
++ *
++ * The regular Android ContactsProvider remains untouched. This app only displays real local
++ * device storage and DAVx5 address-book accounts. Direct SIM phonebook sources are appended
++ * separately because they live outside ContactsProvider.
++ */
++fun Context.isAllowedContactSource(source: ContactSource): Boolean {
++    if (source.type == SMT_PRIVATE || source.name == SMT_PRIVATE) {
++        return false
++    }
++
++    val isDavx5AddressBook = source.type == DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE
++    val isAccountlessDeviceStorage = source.name.isBlank() && source.type.isBlank()
++    val isFossifyPhoneStorage = source.type.equals("PHONE", ignoreCase = true) &&
++        source.name.equals("Phone", ignoreCase = true)
++    val isLocalizedDeviceStorage = source.publicName == getString(R.string.phone_storage)
++
++    return isDavx5AddressBook ||
++        isAccountlessDeviceStorage ||
++        isFossifyPhoneStorage ||
++        isLocalizedDeviceStorage
++}
++
++fun Context.filterAllowedContactSources(sources: List<ContactSource>): List<ContactSource> =
++    sources.filter(::isAllowedContactSource)
++
++fun Context.filterAllowedDisplayContactSources(sources: List<ContactSource>): List<ContactSource> =
++    filterAllowedContactSources(sources) + getSimPhonebookContactSources()
++
++fun Context.getVisibleContactSourcesIncludingSim(): List<String> {
++    val result = getVisibleContactSources().toMutableList()
++    val ignored = config.ignoredContactSources
++
++    getSimPhonebookContactSources().forEach { source ->
++        if (source.getFullIdentifier() !in ignored && source.name !in result) {
++            result += source.name
++        }
++    }
++
++    return result
++}
++
++/**
++ * Loads exactly the contacts that the custom Phone UI is allowed to show.
++ * Fossify-private storage and unrelated Android accounts are never added to the result.
++ */
++fun Context.loadVisiblePhoneContacts(
++    includeSim: Boolean = true,
++    callback: (ArrayList<Contact>) -> Unit,
++) {
++    val helper = ContactsHelper(this)
++    helper.getContactSources { allSources ->
++        val visibleNormalSources = getVisibleContactSources().toHashSet()
++        val allowedVisibleNames = filterAllowedContactSources(allSources)
++            .asSequence()
++            .filter { it.name in visibleNormalSources }
++            .mapTo(HashSet()) { it.name }
++
++        helper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
++            val result = ArrayList(contacts.filter { it.source in allowedVisibleNames })
++
++            if (includeSim) {
++                val visibleWithSim = getVisibleContactSourcesIncludingSim().toHashSet()
++                result.addAll(getSimPhonebookContacts().filter { it.source in visibleWithSim })
++            }
++
++            result.sort()
++            callback(result)
++        }
++    }
++}
 diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
 index 9a26a05..aa7441d 100644
 --- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
@@ -491,6 +583,228 @@ index 7ea6cee..1a85f04 100644
  
                  this.queryLimit = queryLimit
                  val recentCalls = if (previousRecents.isNotEmpty()) {
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
+new file mode 100644
+index 0000000..e93b968
+--- /dev/null
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
+@@ -0,0 +1,216 @@
++package org.fossify.phone.helpers
++
++import android.content.Context
++import android.os.Build
++import android.provider.SimPhonebookContract
++import org.fossify.commons.extensions.getEmptyContact
++import org.fossify.commons.extensions.normalizePhoneNumber
++import org.fossify.commons.helpers.DEFAULT_PHONE_NUMBER_TYPE
++import org.fossify.commons.models.PhoneNumber
++import org.fossify.commons.models.contacts.Contact
++import org.fossify.commons.models.contacts.ContactSource
++
++const val SIM_PHONEBOOK_SOURCE_TYPE = "android.sim.phonebook"
++private const val SIM_PHONEBOOK_SOURCE_PREFIX = "__fossify_sim_phonebook__:"
++
++data class SimPhonebookSource(
++    val subscriptionId: Int,
++    val slotIndex: Int,
++    val maxRecords: Int,
++    val recordCount: Int,
++) {
++    val sourceName: String
++        get() = "$SIM_PHONEBOOK_SOURCE_PREFIX$subscriptionId"
++}
++
++fun String.isSimPhonebookSourceName(): Boolean = startsWith(SIM_PHONEBOOK_SOURCE_PREFIX)
++
++fun Contact.isSimPhonebookContact(): Boolean = source.isSimPhonebookSourceName()
++
++fun Context.getSimPhonebookSources(): List<SimPhonebookSource> {
++    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++        return emptyList()
++    }
++
++    return runCatching {
++        val projection = arrayOf(
++            SimPhonebookContract.ElementaryFiles.SUBSCRIPTION_ID,
++            SimPhonebookContract.ElementaryFiles.SLOT_INDEX,
++            SimPhonebookContract.ElementaryFiles.EF_TYPE,
++            SimPhonebookContract.ElementaryFiles.MAX_RECORDS,
++            SimPhonebookContract.ElementaryFiles.RECORD_COUNT,
++        )
++
++        val result = ArrayList<SimPhonebookSource>()
++        contentResolver.query(
++            SimPhonebookContract.ElementaryFiles.CONTENT_URI,
++            projection,
++            null,
++            null,
++            null,
++        )?.use { cursor ->
++            val subscriptionIdIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.ElementaryFiles.SUBSCRIPTION_ID)
++            val slotIndexIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.ElementaryFiles.SLOT_INDEX)
++            val efTypeIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.ElementaryFiles.EF_TYPE)
++            val maxRecordsIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.ElementaryFiles.MAX_RECORDS)
++            val recordCountIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.ElementaryFiles.RECORD_COUNT)
++
++            while (cursor.moveToNext()) {
++                if (cursor.getInt(efTypeIndex) != SimPhonebookContract.ElementaryFiles.EF_ADN) {
++                    continue
++                }
++
++                val maxRecords = cursor.getInt(maxRecordsIndex)
++                if (maxRecords <= 0) {
++                    continue
++                }
++
++                result += SimPhonebookSource(
++                    subscriptionId = cursor.getInt(subscriptionIdIndex),
++                    slotIndex = cursor.getInt(slotIndexIndex),
++                    maxRecords = maxRecords,
++                    recordCount = cursor.getInt(recordCountIndex),
++                )
++            }
++        }
++
++        result.sortedBy { it.slotIndex }
++    }.getOrDefault(emptyList())
++}
++
++fun Context.getSimPhonebookContactSources(): List<ContactSource> {
++    val sources = getSimPhonebookSources()
++    val multiple = sources.size > 1
++
++    return sources.map { source ->
++        val publicName = if (multiple) "SIM ${source.slotIndex + 1}" else "SIM"
++        ContactSource(source.sourceName, SIM_PHONEBOOK_SOURCE_TYPE, publicName, count = source.recordCount)
++    }
++}
++
++fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
++    val result = ArrayList<Contact>()
++    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++        return result
++    }
++
++    getSimPhonebookSources().forEach { source ->
++        val directoryContacts = querySimPhonebookDirectory(source)
++        if (directoryContacts.isNotEmpty() || source.recordCount == 0) {
++            result.addAll(directoryContacts)
++        } else {
++            result.addAll(querySimPhonebookRecordsIndividually(source))
++        }
++    }
++
++    return result
++}
++
++private fun Context.querySimPhonebookDirectory(source: SimPhonebookSource): List<Contact> = runCatching {
++    val result = ArrayList<Contact>()
++    val uri = SimPhonebookContract.SimRecords.getContentUri(
++        source.subscriptionId,
++        SimPhonebookContract.ElementaryFiles.EF_ADN,
++    )
++    val projection = arrayOf(
++        SimPhonebookContract.SimRecords.RECORD_NUMBER,
++        SimPhonebookContract.SimRecords.NAME,
++        SimPhonebookContract.SimRecords.PHONE_NUMBER,
++    )
++
++    contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
++        val recordNumberIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.SimRecords.RECORD_NUMBER)
++        val nameIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.SimRecords.NAME)
++        val phoneNumberIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.SimRecords.PHONE_NUMBER)
++
++        while (cursor.moveToNext()) {
++            buildSimPhonebookContact(
++                source = source,
++                recordNumber = cursor.getInt(recordNumberIndex),
++                name = cursor.getString(nameIndex).orEmpty(),
++                number = cursor.getString(phoneNumberIndex).orEmpty(),
++            )?.let(result::add)
++        }
++    }
++
++    result
++}.getOrDefault(emptyList())
++
++private fun Context.querySimPhonebookRecordsIndividually(source: SimPhonebookSource): List<Contact> {
++    val result = ArrayList<Contact>()
++    if (source.maxRecords <= 0 || source.recordCount <= 0) {
++        return result
++    }
++
++    val projection = arrayOf(
++        SimPhonebookContract.SimRecords.NAME,
++        SimPhonebookContract.SimRecords.PHONE_NUMBER,
++    )
++
++    for (recordNumber in 1..source.maxRecords) {
++        val contact = runCatching {
++            val uri = SimPhonebookContract.SimRecords.getItemUri(
++                source.subscriptionId,
++                SimPhonebookContract.ElementaryFiles.EF_ADN,
++                recordNumber,
++            )
++            var parsed: Contact? = null
++            contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
++                if (cursor.moveToFirst()) {
++                    val nameIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.SimRecords.NAME)
++                    val phoneNumberIndex = cursor.getColumnIndexOrThrow(SimPhonebookContract.SimRecords.PHONE_NUMBER)
++                    parsed = buildSimPhonebookContact(
++                        source = source,
++                        recordNumber = recordNumber,
++                        name = cursor.getString(nameIndex).orEmpty(),
++                        number = cursor.getString(phoneNumberIndex).orEmpty(),
++                    )
++                }
++            }
++            parsed
++        }.getOrNull()
++
++        contact?.let(result::add)
++        if (result.size >= source.recordCount) {
++            break
++        }
++    }
++
++    return result
++}
++
++private fun Context.buildSimPhonebookContact(
++    source: SimPhonebookSource,
++    recordNumber: Int,
++    name: String,
++    number: String,
++): Contact? {
++    if (recordNumber <= 0 || number.isBlank()) {
++        return null
++    }
++
++    val syntheticId = makeSyntheticSimContactId(source.subscriptionId, recordNumber)
++    val phoneNumbers = arrayListOf(
++        PhoneNumber(
++            value = number,
++            type = DEFAULT_PHONE_NUMBER_TYPE,
++            label = "",
++            normalizedNumber = number.normalizePhoneNumber(),
++        )
++    )
++
++    return getEmptyContact().copy(
++        id = syntheticId,
++        rawId = syntheticId,
++        firstName = name,
++        phoneNumbers = phoneNumbers,
++        source = source.sourceName,
++        contactId = recordNumber,
++    )
++}
++
++private fun makeSyntheticSimContactId(subscriptionId: Int, recordNumber: Int): Int {
++    val positive = ((subscriptionId.toLong() and 0x7fffL) shl 16) or (recordNumber.toLong() and 0xffffL)
++    val bounded = (positive % Int.MAX_VALUE).toInt().coerceAtLeast(1)
++    return -bounded
++}
 diff --git a/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt b/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt
 index 53a681f..5bf9032 100644
 --- a/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt

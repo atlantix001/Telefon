@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.0
+# Fossify Phone filtered — v0.2.1
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -75,7 +75,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.0-1.11.1.apk`
+`Fossify-Phone-filter-0.2.1-1.11.1.apk`
 
 ## Signing freeze
 
@@ -92,3 +92,12 @@ Workflow SHA-256:
 ## Lokale Prüfung
 
 Der Patch wurde gegen den bereitgestellten Source-Snapshot von Fossify Phone 1.11.1 statisch mit `git apply --check` und `git diff --check` geprüft. In dieser Umgebung wurde kein vollständiger Android-Build behauptet; der Compile-/APK-Test erfolgt über GitHub Actions.
+
+## v0.2.1 compile fix
+
+v0.2.0 failed at Kotlin compilation because the generated patch referenced two new source files that were present in the working tree but accidentally omitted from the patch archive:
+
+- `app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt`
+- `app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt`
+
+v0.2.1 contains those files as proper `new file` patch entries. No functional filtering or SIM logic was otherwise changed. Workflow and signing key are unchanged.

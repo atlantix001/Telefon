@@ -1,0 +1,515 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt
+index 6e35418..a249f92 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt
+@@ -2,7 +2,6 @@ package org.fossify.phone.activities
+ 
+ import android.annotation.SuppressLint
+ import android.content.Intent
+-import android.database.Cursor
+ import android.net.Uri
+ import android.os.Bundle
+ import android.os.Handler
+@@ -26,7 +25,6 @@ import org.fossify.commons.extensions.checkAppSideloading
+ import org.fossify.commons.extensions.getColorStateList
+ import org.fossify.commons.extensions.getColoredDrawableWithColor
+ import org.fossify.commons.extensions.getContrastColor
+-import org.fossify.commons.extensions.getMyContactsCursor
+ import org.fossify.commons.extensions.getProperPrimaryColor
+ import org.fossify.commons.extensions.getProperTextColor
+ import org.fossify.commons.extensions.isDefaultDialer
+@@ -36,10 +34,8 @@ import org.fossify.commons.extensions.performHapticFeedback
+ import org.fossify.commons.extensions.updateTextColors
+ import org.fossify.commons.extensions.value
+ import org.fossify.commons.extensions.viewBinding
+-import org.fossify.commons.helpers.ContactsHelper
+ import org.fossify.commons.helpers.KeypadHelper
+ import org.fossify.commons.helpers.LOWER_ALPHA_INT
+-import org.fossify.commons.helpers.MyContactsContentProvider
+ import org.fossify.commons.helpers.NavigationIcon
+ import org.fossify.commons.helpers.REQUEST_CODE_SET_DEFAULT_DIALER
+ import org.fossify.commons.helpers.isOreoPlus
+@@ -53,6 +49,7 @@ import org.fossify.phone.extensions.boundingBox
+ import org.fossify.phone.extensions.config
+ import org.fossify.phone.extensions.disableKeyboard
+ import org.fossify.phone.extensions.getKeyEvent
++import org.fossify.phone.extensions.loadVisiblePhoneContacts
+ import org.fossify.phone.extensions.setupWithContacts
+ import org.fossify.phone.extensions.startAddContactIntent
+ import org.fossify.phone.extensions.startCallWithConfirmationCheck
+@@ -69,7 +66,6 @@ class DialpadActivity : SimpleActivity() {
+ 
+     private var allContacts = ArrayList<Contact>()
+     private var speedDialValues = ArrayList<SpeedDial>()
+-    private var privateCursor: Cursor? = null
+     private var toneGeneratorHelper: ToneGeneratorHelper? = null
+     private val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+     private val longPressHandler = Handler(Looper.getMainLooper())
+@@ -144,7 +140,6 @@ class DialpadActivity : SimpleActivity() {
+ 
+         setupOptionsMenu()
+         speedDialValues = config.getSpeedDialValues()
+-        privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+ 
+         toneGeneratorHelper = ToneGeneratorHelper(this, DIALPAD_TONE_LENGTH_MS)
+ 
+@@ -199,8 +194,8 @@ class DialpadActivity : SimpleActivity() {
+             dialpadInput.disableKeyboard()
+         }
+ 
+-        ContactsHelper(this).getContacts(showOnlyContactsWithNumbers = true) { allContacts ->
+-            gotContacts(allContacts)
++        loadVisiblePhoneContacts(includeSim = true) { contacts ->
++            gotContacts(contacts)
+         }
+ 
+         val properPrimaryColor = getProperPrimaryColor()
+@@ -279,12 +274,6 @@ class DialpadActivity : SimpleActivity() {
+     private fun gotContacts(newContacts: ArrayList<Contact>) {
+         allContacts = newContacts
+ 
+-        val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
+-        if (privateContacts.isNotEmpty()) {
+-            allContacts.addAll(privateContacts)
+-            allContacts.sort()
+-        }
+-
+         runOnUiThread {
+             if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
+                 dialpadValueChanged("")
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+index 75f340c..bc0a6af 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+@@ -41,6 +41,7 @@ import org.fossify.phone.fragments.FavoritesFragment
+ import org.fossify.phone.fragments.MyViewPagerFragment
+ import org.fossify.phone.fragments.RecentsFragment
+ import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
++import org.fossify.phone.helpers.getSimPhonebookContacts
+ import org.fossify.phone.helpers.RecentsHelper
+ import org.fossify.phone.helpers.tabsList
+ import org.fossify.phone.models.Events
+@@ -622,9 +623,10 @@ class MainActivity : SimpleActivity() {
+                 val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+-                    contacts.sort()
+                 }
+             }
++            contacts.addAll(getSimPhonebookContacts())
++            contacts.sort()
+ 
+             try {
+                 cachedContacts.clear()
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
+index bf057b9..806f597 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
+@@ -3,12 +3,9 @@ package org.fossify.phone.activities
+ import android.os.Bundle
+ import com.google.gson.Gson
+ import org.fossify.commons.dialogs.RadioGroupDialog
+-import org.fossify.commons.extensions.getMyContactsCursor
+ import org.fossify.commons.extensions.getPhoneNumberTypeText
+ import org.fossify.commons.extensions.updateTextColors
+ import org.fossify.commons.extensions.viewBinding
+-import org.fossify.commons.helpers.ContactsHelper
+-import org.fossify.commons.helpers.MyContactsContentProvider
+ import org.fossify.commons.helpers.NavigationIcon
+ import org.fossify.commons.models.PhoneNumber
+ import org.fossify.commons.models.RadioItem
+@@ -17,6 +14,7 @@ import org.fossify.phone.adapters.SpeedDialAdapter
+ import org.fossify.phone.databinding.ActivityManageSpeedDialBinding
+ import org.fossify.phone.dialogs.SelectContactDialog
+ import org.fossify.phone.extensions.config
++import org.fossify.phone.extensions.loadVisiblePhoneContacts
+ import org.fossify.phone.interfaces.RemoveSpeedDialListener
+ import org.fossify.phone.models.SpeedDial
+ 
+@@ -39,13 +37,9 @@ class ManageSpeedDialActivity : SimpleActivity(), RemoveSpeedDialListener {
+         speedDialValues = config.getSpeedDialValues()
+         updateAdapter()
+ 
+-        ContactsHelper(this).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
++        loadVisiblePhoneContacts(includeSim = true) { contacts ->
++            allContacts.clear()
+             allContacts.addAll(contacts)
+-
+-            val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+-            val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
+-            allContacts.addAll(privateContacts)
+-            allContacts.sort()
+         }
+ 
+         updateTextColors(binding.manageSpeedDialScrollview)
+diff --git a/app/src/main/kotlin/org/fossify/phone/adapters/ContactsAdapter.kt b/app/src/main/kotlin/org/fossify/phone/adapters/ContactsAdapter.kt
+index fb6827c..cda465e 100644
+--- a/app/src/main/kotlin/org/fossify/phone/adapters/ContactsAdapter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/adapters/ContactsAdapter.kt
+@@ -34,6 +34,7 @@ import org.fossify.phone.extensions.areMultipleSIMsAvailable
+ import org.fossify.phone.extensions.callContactWithSim
+ import org.fossify.phone.extensions.config
+ import org.fossify.phone.extensions.startContactDetailsIntent
++import org.fossify.phone.helpers.isSimPhonebookContact
+ import org.fossify.phone.interfaces.RefreshItemsListener
+ import java.util.Collections
+ 
+@@ -120,9 +121,9 @@ class ContactsAdapter(
+         }
+     }
+ 
+-    override fun getSelectableItemCount() = contacts.size
++    override fun getSelectableItemCount() = contacts.count { !it.isSimPhonebookContact() }
+ 
+-    override fun getIsItemSelectable(position: Int) = true
++    override fun getIsItemSelectable(position: Int) = !contacts.getOrNull(position).let { it?.isSimPhonebookContact() ?: true }
+ 
+     override fun getItemSelectionKey(position: Int) = contacts.getOrNull(position)?.rawId
+ 
+@@ -149,7 +150,7 @@ class ContactsAdapter(
+ 
+     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+         val contact = contacts[position]
+-        holder.bindView(contact, true, allowLongClick) { itemView, _ ->
++        holder.bindView(contact, true, allowLongClick && !contact.isSimPhonebookContact()) { itemView, _ ->
+             val viewType = getItemViewType(position)
+             setupView(Binding.getByItemViewType(viewType).bind(itemView), contact, holder)
+         }
+diff --git a/app/src/main/kotlin/org/fossify/phone/dialogs/FilterContactSourcesDialog.kt b/app/src/main/kotlin/org/fossify/phone/dialogs/FilterContactSourcesDialog.kt
+index 2eba2c4..5ec6df9 100644
+--- a/app/src/main/kotlin/org/fossify/phone/dialogs/FilterContactSourcesDialog.kt
++++ b/app/src/main/kotlin/org/fossify/phone/dialogs/FilterContactSourcesDialog.kt
+@@ -3,7 +3,6 @@ package org.fossify.phone.dialogs
+ import androidx.appcompat.app.AlertDialog
+ import org.fossify.commons.extensions.*
+ import org.fossify.commons.helpers.ContactsHelper
+-import org.fossify.commons.helpers.MyContactsContentProvider
+ import org.fossify.commons.helpers.SMT_PRIVATE
+ import org.fossify.commons.models.contacts.Contact
+ import org.fossify.commons.models.contacts.ContactSource
+@@ -12,11 +11,17 @@ import org.fossify.phone.activities.SimpleActivity
+ import org.fossify.phone.adapters.FilterContactSourcesAdapter
+ import org.fossify.phone.databinding.DialogFilterContactSourcesBinding
+ import org.fossify.phone.extensions.config
++import org.fossify.phone.extensions.filterAllowedDisplayContactSources
++import org.fossify.phone.extensions.getVisibleContactSourcesIncludingSim
++import org.fossify.phone.extensions.isAllowedContactSource
++import org.fossify.phone.helpers.getSimPhonebookContactSources
++import org.fossify.phone.helpers.isSimPhonebookSourceName
+ 
+ class FilterContactSourcesDialog(val activity: SimpleActivity, private val callback: () -> Unit) {
+     private val binding by activity.viewBinding(DialogFilterContactSourcesBinding::inflate)
+ 
+     private var dialog: AlertDialog? = null
++    private var allNormalContactSources = ArrayList<ContactSource>()
+     private var contactSources = ArrayList<ContactSource>()
+     private var contacts = ArrayList<Contact>()
+     private var isContactSourcesReady = false
+@@ -24,67 +29,81 @@ class FilterContactSourcesDialog(val activity: SimpleActivity, private val callb
+ 
+     init {
+         val contactHelper = ContactsHelper(activity)
+-        contactHelper.getContactSources { contactSources ->
+-            contactSources.mapTo(this@FilterContactSourcesDialog.contactSources) { it.copy() }
++        contactHelper.getContactSources { sources ->
++            allNormalContactSources = ArrayList(sources.map { it.copy() })
++            contactSources = ArrayList(activity.filterAllowedDisplayContactSources(sources).map { it.copy() })
+             isContactSourcesReady = true
+             processDataIfReady()
+         }
+ 
+-        contactHelper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) {
+-            it.mapTo(contacts) { contact -> contact.copy() }
+-            val privateCursor = activity.getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+-            val privateContacts = MyContactsContentProvider.getContacts(activity, privateCursor)
+-            this.contacts.addAll(privateContacts)
++        contactHelper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) { loadedContacts ->
++            loadedContacts.mapTo(contacts) { it.copy() }
+             isContactsReady = true
+             processDataIfReady()
+         }
+     }
+ 
+     private fun processDataIfReady() {
+-        if (!isContactSourcesReady) {
++        if (!isContactSourcesReady || !isContactsReady || dialog != null) {
+             return
+         }
+ 
+         val contactSourcesWithCount = ArrayList<ContactSource>()
+         for (contactSource in contactSources) {
+-            val count = if (isContactsReady) {
+-                contacts.count { it.source == contactSource.name }
++            val count = if (contactSource.name.isSimPhonebookSourceName()) {
++                contactSource.count
+             } else {
+-                -1
++                contacts.count { it.source == contactSource.name }
+             }
+             contactSourcesWithCount.add(contactSource.copy(count = count))
+         }
+ 
+-        contactSources.clear()
+-        contactSources.addAll(contactSourcesWithCount)
++        contactSources = contactSourcesWithCount
+ 
+         activity.runOnUiThread {
+-            val selectedSources = activity.getVisibleContactSources()
++            val selectedSources = ArrayList(activity.getVisibleContactSourcesIncludingSim())
+             binding.filterContactSourcesList.adapter = FilterContactSourcesAdapter(activity, contactSourcesWithCount, selectedSources)
+ 
+-            if (dialog == null) {
+-                activity.getAlertDialogBuilder()
+-                    .setPositiveButton(R.string.ok) { _, _ -> confirmContactSources() }
+-                    .setNegativeButton(R.string.cancel, null)
+-                    .apply {
+-                        activity.setupDialogStuff(binding.root, this) { alertDialog ->
+-                            dialog = alertDialog
+-                        }
++            activity.getAlertDialogBuilder()
++                .setPositiveButton(R.string.ok) { _, _ -> confirmContactSources() }
++                .setNegativeButton(R.string.cancel, null)
++                .apply {
++                    activity.setupDialogStuff(binding.root, this) { alertDialog ->
++                        dialog = alertDialog
+                     }
+-            }
++                }
+         }
+     }
+ 
+     private fun confirmContactSources() {
+-        val selectedContactSources = (binding.filterContactSourcesList.adapter as FilterContactSourcesAdapter).getSelectedContactSources()
+-        val ignoredContactSources = contactSources.filter { !selectedContactSources.contains(it) }.map {
++        val selectedContactSources =
++            (binding.filterContactSourcesList.adapter as FilterContactSourcesAdapter).getSelectedContactSources()
++        val selectedIdentifiers = selectedContactSources.mapTo(HashSet()) {
+             if (it.type == SMT_PRIVATE) SMT_PRIVATE else it.getFullIdentifier()
+-        }.toHashSet()
++        }
++
++        val ignoredContactSources = HashSet<String>()
++        ignoredContactSources += SMT_PRIVATE
+ 
+-        if (activity.getVisibleContactSources() != ignoredContactSources) {
+-            activity.config.ignoredContactSources = ignoredContactSources
+-            callback()
++        // Hard-hide every unrelated normal Android contact account. For allowed sources, keep the
++        // user's checkbox choice.
++        allNormalContactSources.forEach { source ->
++            val identifier = if (source.type == SMT_PRIVATE) SMT_PRIVATE else source.getFullIdentifier()
++            if (!activity.isAllowedContactSource(source) || identifier !in selectedIdentifiers) {
++                ignoredContactSources += identifier
++            }
+         }
++
++        // SIM sources are synthetic and therefore need to be persisted explicitly too.
++        activity.getSimPhonebookContactSources().forEach { source ->
++            val identifier = source.getFullIdentifier()
++            if (identifier !in selectedIdentifiers) {
++                ignoredContactSources += identifier
++            }
++        }
++
++        activity.config.ignoredContactSources = ignoredContactSources
++        callback()
+         dialog?.dismiss()
+     }
+ }
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ActivityExt.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ActivityExt.kt
+index 3a2bd0c..dcd900d 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ActivityExt.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ActivityExt.kt
+@@ -16,6 +16,7 @@ import org.fossify.commons.helpers.SimpleContactsHelper
+ import org.fossify.commons.helpers.ensureBackgroundThread
+ import org.fossify.commons.models.contacts.Contact
+ import org.fossify.phone.activities.SimpleActivity
++import org.fossify.phone.helpers.isSimPhonebookContact
+ 
+ fun SimpleActivity.handleGenericContactClick(contact: Contact) {
+     when (config.onContactClick) {
+@@ -34,6 +35,13 @@ fun SimpleActivity.launchCreateNewContactIntent() {
+ 
+ // handle private contacts differently, only Simple Contacts Pro can open them
+ fun Activity.startContactDetailsIntent(contact: Contact) {
++    // Direct SIM phonebook records do not have a ContactsProvider lookup URI. In Phone,
++    // falling back to the normal call action is safer than opening a bogus contact detail URI.
++    if (contact.isSimPhonebookContact()) {
++        (this as? SimpleActivity)?.startCallWithConfirmationCheck(contact)
++        return
++    }
++
+     val simpleContacts = "org.fossify.contacts"
+     val simpleContactsDebug = "org.fossify.contacts.debug"
+     val isPrivateContact = contact.rawId > FIRST_CONTACT_ID
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+index 9a26a05..aa7441d 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+@@ -4,20 +4,15 @@ import android.content.Context
+ import android.util.AttributeSet
+ import org.fossify.commons.adapters.MyRecyclerViewAdapter
+ import org.fossify.commons.extensions.areSystemAnimationsEnabled
+-import org.fossify.commons.extensions.baseConfig
+ import org.fossify.commons.extensions.beGone
+ import org.fossify.commons.extensions.beVisible
+ import org.fossify.commons.extensions.beVisibleIf
+ import org.fossify.commons.extensions.getColorStateList
+ import org.fossify.commons.extensions.getContrastColor
+-import org.fossify.commons.extensions.getMyContactsCursor
+ import org.fossify.commons.extensions.hasPermission
+ import org.fossify.commons.extensions.normalizeString
+ import org.fossify.commons.extensions.underlineText
+-import org.fossify.commons.helpers.ContactsHelper
+-import org.fossify.commons.helpers.MyContactsContentProvider
+ import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
+-import org.fossify.commons.helpers.SMT_PRIVATE
+ import org.fossify.commons.helpers.getProperText
+ import org.fossify.commons.models.contacts.Contact
+ import org.fossify.phone.R
+@@ -28,6 +23,7 @@ import org.fossify.phone.databinding.FragmentContactsBinding
+ import org.fossify.phone.databinding.FragmentLettersLayoutBinding
+ import org.fossify.phone.extensions.handleGenericContactClick
+ import org.fossify.phone.extensions.launchCreateNewContactIntent
++import org.fossify.phone.extensions.loadVisiblePhoneContacts
+ import org.fossify.phone.extensions.setupWithContacts
+ import org.fossify.phone.extensions.startContactDetailsIntent
+ import org.fossify.phone.interfaces.RefreshItemsListener
+@@ -86,21 +82,12 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
+     }
+ 
+     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
+-        val privateCursor = context?.getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+-        ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
++        context.loadVisiblePhoneContacts(includeSim = true) { contacts ->
+             allContacts = contacts
+-
+-            if (SMT_PRIVATE !in context.baseConfig.ignoredContactSources) {
+-                val privateContacts = MyContactsContentProvider.getContacts(context, privateCursor)
+-                if (privateContacts.isNotEmpty()) {
+-                    allContacts.addAll(privateContacts)
+-                    allContacts.sort()
+-                }
+-            }
+             (activity as MainActivity).cacheContacts()
+ 
+             activity?.runOnUiThread {
+-                gotContacts(contacts)
++                gotContacts(allContacts)
+                 callback?.invoke()
+             }
+         }
+@@ -187,11 +174,7 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
+             if (it) {
+                 binding.fragmentPlaceholder.text = context.getString(R.string.no_contacts_found)
+                 binding.fragmentPlaceholder2.text = context.getString(R.string.create_new_contact)
+-                ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
+-                    activity?.runOnUiThread {
+-                        gotContacts(contacts)
+-                    }
+-                }
++                refreshItems(invalidate = true)
+             }
+         }
+     }
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
+index 0e08d3c..a119d0f 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
+@@ -5,19 +5,14 @@ import android.util.AttributeSet
+ import com.google.gson.Gson
+ import org.fossify.commons.adapters.MyRecyclerViewAdapter
+ import org.fossify.commons.extensions.areSystemAnimationsEnabled
+-import org.fossify.commons.extensions.baseConfig
+ import org.fossify.commons.extensions.beGone
+ import org.fossify.commons.extensions.beVisible
+ import org.fossify.commons.extensions.beVisibleIf
+ import org.fossify.commons.extensions.getColorStateList
+ import org.fossify.commons.extensions.getContrastColor
+-import org.fossify.commons.extensions.getMyContactsCursor
+ import org.fossify.commons.extensions.hasPermission
+-import org.fossify.commons.helpers.ContactsHelper
+ import org.fossify.commons.helpers.Converters
+-import org.fossify.commons.helpers.MyContactsContentProvider
+ import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
+-import org.fossify.commons.helpers.SMT_PRIVATE
+ import org.fossify.commons.helpers.VIEW_TYPE_GRID
+ import org.fossify.commons.models.contacts.Contact
+ import org.fossify.commons.views.MyGridLayoutManager
+@@ -29,6 +24,7 @@ import org.fossify.phone.databinding.FragmentFavoritesBinding
+ import org.fossify.phone.databinding.FragmentLettersLayoutBinding
+ import org.fossify.phone.extensions.config
+ import org.fossify.phone.extensions.handleGenericContactClick
++import org.fossify.phone.extensions.loadVisiblePhoneContacts
+ import org.fossify.phone.extensions.setupWithContacts
+ import org.fossify.phone.extensions.startContactDetailsIntent
+ import org.fossify.phone.interfaces.RefreshItemsListener
+@@ -69,20 +65,8 @@ class FavoritesFragment(context: Context, attributeSet: AttributeSet) : MyViewPa
+     }
+ 
+     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
+-        ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
+-            allContacts = contacts
+-
+-            if (SMT_PRIVATE !in context.baseConfig.ignoredContactSources) {
+-                val privateCursor = context?.getMyContactsCursor(favoritesOnly = true, withPhoneNumbersOnly = true)
+-                val privateContacts = MyContactsContentProvider.getContacts(context, privateCursor).map {
+-                    it.copy(starred = 1)
+-                }
+-                if (privateContacts.isNotEmpty()) {
+-                    allContacts.addAll(privateContacts)
+-                    allContacts.sort()
+-                }
+-            }
+-            val favorites = contacts.filter { it.starred == 1 } as ArrayList<Contact>
++        context.loadVisiblePhoneContacts(includeSim = false) { contacts ->
++            val favorites = ArrayList(contacts.filter { it.starred == 1 })
+ 
+             allContacts = if (activity!!.config.isCustomOrderSelected) {
+                 sortByCustomOrder(favorites)
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+index cdd52d4..abb41cb 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+@@ -42,6 +42,7 @@ fun getCallContact(context: Context, call: Call?, callback: (CallContact) -> Uni
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
++                contacts.addAll(context.getSimPhonebookContacts())
+ 
+                 val contactsWithMultipleNumbers = contacts.filter { it.phoneNumbers.size > 1 }
+                 val numbersToContactIDMap = HashMap<String, Int>()
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+index 7ea6cee..1a85f04 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+@@ -42,6 +42,7 @@ class RecentsHelper(private val context: Context) {
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
++                contacts.addAll(context.getSimPhonebookContacts())
+ 
+                 this.queryLimit = queryLimit
+                 val recentCalls = if (previousRecents.isNotEmpty()) {
+diff --git a/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt b/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt
+index 53a681f..5bf9032 100644
+--- a/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt
++++ b/app/src/main/kotlin/org/fossify/phone/services/SimpleCallScreeningService.kt
+@@ -7,6 +7,7 @@ import org.fossify.commons.extensions.getMyContactsCursor
+ import org.fossify.commons.extensions.isNumberBlocked
+ import org.fossify.commons.helpers.ContactLookupResult
+ import org.fossify.commons.helpers.SimpleContactsHelper
++import org.fossify.phone.helpers.getSimPhonebookContacts
+ 
+ class SimpleCallScreeningService : CallScreeningService() {
+ 
+@@ -20,7 +21,8 @@ class SimpleCallScreeningService : CallScreeningService() {
+             number != null && baseConfig.blockUnknownNumbers -> {
+                 val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+                 val result = SimpleContactsHelper(this).existsSync(number, privateCursor)
+-                respondToCall(callDetails, isBlocked = result == ContactLookupResult.NotFound)
++                val existsOnSim = getSimPhonebookContacts().any { it.doesHavePhoneNumber(number) }
++                respondToCall(callDetails, isBlocked = result == ContactLookupResult.NotFound && !existsOnSim)
+             }
+ 
+             number == null && baseConfig.blockHiddenNumbers -> {

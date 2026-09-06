@@ -1,0 +1,52 @@
+name: Fossify Phone source snapshot
+
+on:
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout preflight repository
+        uses: actions/checkout@v4
+
+      - name: Read pinned upstream
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          source UPSTREAM.env
+          {
+            echo "repo=$FOSSIFY_PHONE_REPO"
+            echo "tag=$FOSSIFY_PHONE_TAG"
+            echo "commit=$FOSSIFY_PHONE_COMMIT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch exact Fossify Phone release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ steps.upstream.outputs.tag }}" \
+            "${{ steps.upstream.outputs.repo }}" upstream-phone
+          ACTUAL="$(git -C upstream-phone rev-parse HEAD)"
+          echo "Fossify Phone upstream commit: $ACTUAL"
+          test "$ACTUAL" = "${{ steps.upstream.outputs.commit }}"
+
+      - name: Create compact source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/create-source-snapshot.sh
+          bash scripts/create-source-snapshot.sh upstream-phone Fossify-Phone-source-snapshot-${{ steps.upstream.outputs.tag }}
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fossify-Phone-source-snapshot-${{ steps.upstream.outputs.tag }}
+          path: |
+            Fossify-Phone-source-snapshot-${{ steps.upstream.outputs.tag }}.zip
+            Fossify-Phone-source-snapshot-${{ steps.upstream.outputs.tag }}.zip.sha256
+          if-no-files-found: error

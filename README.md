@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.1
+# Fossify Phone filtered — v0.2.2
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -75,7 +75,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.1-1.11.1.apk`
+`Fossify-Phone-filter-0.2.2-1.11.1.apk`
 
 ## Signing freeze
 
@@ -93,11 +93,8 @@ Workflow SHA-256:
 
 Der Patch wurde gegen den bereitgestellten Source-Snapshot von Fossify Phone 1.11.1 statisch mit `git apply --check` und `git diff --check` geprüft. In dieser Umgebung wurde kein vollständiger Android-Build behauptet; der Compile-/APK-Test erfolgt über GitHub Actions.
 
-## v0.2.1 compile fix
+## v0.2.2 compile fix
 
-v0.2.0 failed at Kotlin compilation because the generated patch referenced two new source files that were present in the working tree but accidentally omitted from the patch archive:
+v0.2.1 reached Kotlin compilation and failed at exactly one root error in `SimPhonebook.kt`: the current Commons `Contact.copy(...)` has no named `rawId` parameter.
 
-- `app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt`
-- `app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt`
-
-v0.2.1 contains those files as proper `new file` patch entries. No functional filtering or SIM logic was otherwise changed. Workflow and signing key are unchanged.
+v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain explicitly included as `new file` entries in the patch. SIM contacts are non-selectable in Phone, so selection behavior does not depend on assigning a synthetic rawId. All other filtering/SIM logic is unchanged. Workflow and signing key are unchanged.

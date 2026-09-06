@@ -585,10 +585,10 @@ index 7ea6cee..1a85f04 100644
                  val recentCalls = if (previousRecents.isNotEmpty()) {
 diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
 new file mode 100644
-index 0000000..e93b968
+index 0000000..a23c148
 --- /dev/null
 +++ b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,215 @@
 +package org.fossify.phone.helpers
 +
 +import android.content.Context
@@ -792,7 +792,6 @@ index 0000000..e93b968
 +
 +    return getEmptyContact().copy(
 +        id = syntheticId,
-+        rawId = syntheticId,
 +        firstName = name,
 +        phoneNumbers = phoneNumbers,
 +        source = source.sourceName,

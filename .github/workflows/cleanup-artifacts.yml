@@ -1,0 +1,77 @@
+name: Cleanup old workflow runs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          echo "Suche vorhandene Artefakte..."
+
+          gh api \
+            --paginate \
+            "/repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | [.created_at, .workflow_run.id] | @tsv' \
+            > artifacts.tsv
+
+          # Den neuesten Run mit Artefakten behalten
+          if [ -s artifacts.tsv ]; then
+            KEEP_RUN_ID=$(
+              sort -r artifacts.tsv |
+              head -n 1 |
+              cut -f2
+            )
+
+            echo "Run $KEEP_RUN_ID wird behalten."
+          else
+            KEEP_RUN_ID=""
+            echo "Keine Artefakte gefunden."
+          fi
+
+          echo "Suche alte Workflow Runs..."
+
+          gh api \
+            --paginate \
+            "/repos/$REPO/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | .id' \
+            > runs.txt
+
+          DELETE_COUNT=0
+
+          while read -r RUN_ID; do
+
+            # Aktuellen Cleanup-Run niemals löschen
+            if [ "$RUN_ID" = "$CURRENT_RUN_ID" ]; then
+              continue
+            fi
+
+            # Run mit den neuesten Artefakten behalten
+            if [ -n "$KEEP_RUN_ID" ] && [ "$RUN_ID" = "$KEEP_RUN_ID" ]; then
+              continue
+            fi
+
+            echo "Lösche Workflow Run $RUN_ID ..."
+
+            gh api \
+              --method DELETE \
+              "/repos/$REPO/actions/runs/$RUN_ID"
+
+            DELETE_COUNT=$((DELETE_COUNT + 1))
+
+          done < runs.txt
+
+          echo "$DELETE_COUNT alte Workflow Runs gelöscht."
+          echo "Fertig."

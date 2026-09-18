@@ -2,7 +2,7 @@ diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/
 index 889f6f0..8ff22fe 100644
 --- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
-@@ -2,7 +2,7 @@ import org.fossify.phone.fragments.FavoritesFragment
+@@ -41,7 +41,7 @@ import org.fossify.phone.fragments.FavoritesFragment
  import org.fossify.phone.fragments.MyViewPagerFragment
  import org.fossify.phone.fragments.RecentsFragment
  import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
@@ -11,7 +11,27 @@ index 889f6f0..8ff22fe 100644
  import org.fossify.phone.helpers.RecentsHelper
  import org.fossify.phone.helpers.tabsList
  import org.fossify.phone.models.Events
-@@ -17,7 +17,7 @@ class MainActivity : SimpleActivity() {
+@@ -524,10 +524,17 @@
+     }
+ 
+     fun refreshFragments() {
+-        cacheContacts()
++        // Keep the first visible Phone frame limited to contacts/favorites. Recents and the
++        // global cache perform extra provider work and are not needed for the initial paint.
+         getContactsFragment()?.refreshItems()
+         getFavoritesFragment()?.refreshItems()
+-        getRecentsFragment()?.refreshItems()
++
++        binding.root.postDelayed({
++            if (!isDestroyed && !isFinishing) {
++                cacheContacts()
++                getRecentsFragment()?.refreshItems()
++            }
++        }, 3000L)
+     }
+ 
+     private fun getAllFragments(): ArrayList<MyViewPagerFragment<*>?> {
+@@ -623,7 +630,7 @@ class MainActivity : SimpleActivity() {
                      contacts.addAll(privateContacts)
                  }
              }
@@ -20,18 +40,6 @@ index 889f6f0..8ff22fe 100644
              contacts.sort()
  
              try {
-diff --git a/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
-index aaf32d1..b1c68d3 100644
---- a/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
-+++ b/app/src/main/kotlin/org/fossify/phone/activities/ManageSpeedDialActivity.kt
-@@ -2,6 +2,7 @@
-         updateAdapter()
- 
-         loadVisiblePhoneContacts(includeSim = true) { contacts ->
-+            allContacts.clear()
-             allContacts.addAll(contacts)
-         }
- 
 diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
 index f526c9b..4dbaff8 100644
 --- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
@@ -65,7 +73,7 @@ index f526c9b..4dbaff8 100644
          if (source.getFullIdentifier() !in ignored && source.name !in result) {
              result += source.name
          }
-@@ -57,30 +61,113 @@ fun Context.getVisibleContactSourcesIncludingSim(): List<String> {
+@@ -57,30 +61,112 @@ fun Context.getVisibleContactSourcesIncludingSim(): List<String> {
  
  /**
   * Loads exactly the contacts that the custom Phone UI is allowed to show.
@@ -126,10 +134,9 @@ index f526c9b..4dbaff8 100644
 +        callback(published)
 +
 +        if (requestSim) {
-+            // The callback above queues the normal Phone UI update first. Queue the SIM loader on
-+            // the main looper afterwards, then do the actual provider work on its shared worker.
-+            // This keeps first paint ahead of the cold SIM provider after a reboot.
-+            Handler(Looper.getMainLooper()).post {
++            // Phone has more startup consumers than Contacts. Give the normal contacts/favorites
++            // frame an explicit head start; SIM stays asynchronous and is merged afterwards.
++            Handler(Looper.getMainLooper()).postDelayed({
 +                loadSimPhonebookContactsAsync { loadedSimContacts ->
 +                    if (loadedSimContacts.isEmpty()) {
 +                        return@loadSimPhonebookContactsAsync
@@ -146,7 +153,7 @@ index f526c9b..4dbaff8 100644
 +                    normal.sort()
 +                    callback(normal)
 +                }
-+            }
++            }, 3500L)
 +        }
 +    }
 +
@@ -191,10 +198,9 @@ index f526c9b..4dbaff8 100644
      }
  }
 diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
-index 161ad6a..1e9a56c 100644
 --- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
-@@ -1,13 +1,30 @@
+@@ -82,13 +82,29 @@
      }
  
      override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
@@ -215,7 +221,7 @@ index 161ad6a..1e9a56c 100644
 +            previewCallback = previewCallback,
 +        ) { contacts ->
              allContacts = contacts
-             (activity as MainActivity).cacheContacts()
+-            (activity as MainActivity).cacheContacts()
  
              activity?.runOnUiThread {
                  gotContacts(allContacts)
@@ -227,6 +233,18 @@ index 161ad6a..1e9a56c 100644
              }
          }
      }
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+@@ -42,7 +42,7 @@
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
+-                contacts.addAll(context.getSimPhonebookContacts())
++                contacts.addAll(context.getCachedSimPhonebookContacts())
+ 
+                 val contactsWithMultipleNumbers = contacts.filter { it.phoneNumbers.size > 1 }
+                 val numbersToContactIDMap = HashMap<String, Int>()
 diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/FastContactsPreview.kt b/app/src/main/kotlin/org/fossify/phone/helpers/FastContactsPreview.kt
 new file mode 100644
 index 0000000..8c04086
@@ -308,10 +326,9 @@ index 0000000..8c04086
 +    return ArrayList(result)
 +}
 diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
-index e774b4e..66b685a 100644
 --- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
-@@ -1,7 +1,7 @@
+@@ -42,7 +42,7 @@
                  if (privateContacts.isNotEmpty()) {
                      contacts.addAll(privateContacts)
                  }

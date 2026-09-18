@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.2
+# Fossify Phone filtered — v0.2.3-r5
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -75,7 +75,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.2-1.11.1.apk`
+`Fossify-Phone-filter-0.2.3-r5-1.11.1.apk`
 
 ## Signing freeze
 
@@ -87,11 +87,11 @@ Dieser Key wurde als initialer fester Key für die Phone-Filter-Linie erzeugt un
 
 Workflow SHA-256:
 
-`1d5acf6b344098e93d05375ff6626d317a409fd96907d3cd66c281d20ee4f4bb`
+`b126d11f52875a1be6cc8b828dc38bcc5523aa086c77c89c102969adcf3763d7`
 
 ## Lokale Prüfung
 
-Der Patch wurde gegen den bereitgestellten Source-Snapshot von Fossify Phone 1.11.1 statisch mit `git apply --check` und `git diff --check` geprüft. In dieser Umgebung wurde kein vollständiger Android-Build behauptet; der Compile-/APK-Test erfolgt über GitHub Actions.
+Die Patchsyntax wurde lokal mit `git apply --numstat` geprüft. Der konsolidierte `0002` wurde zusätzlich mit `git apply --check` und `git diff --check` gegen einen Post-`0001`-Validierungsbaum mit den tatsächlichen betroffenen Code-Kontexten geprüft. Der vollständige Clone von Fossify Phone 1.11.1 und damit die endgültige Patch-/Compile-Prüfung erfolgt im GitHub-Actions-Workflow.
 
 ## v0.2.2 compile fix
 
@@ -102,3 +102,29 @@ v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain ex
 ## v0.2.3-r3 hard first-paint barrier
 
 This clean rebuild starts from the original v0.2.2 repository. Contacts and Favorites are the only immediate startup refreshes. MainActivity cache work and Recents are delayed by 3 seconds, and SIM discovery is delayed by 3.5 seconds after the authoritative normal-contact result. This intentionally prevents Phone-specific provider consumers from overlapping the first contact frame after reboot.
+
+## v0.2.3-r4 workflow correction
+
+This release fixes a packaging/build error in the previous clean cold-start test repositories.
+The repository contained `0002` and `0003`, but the GitHub Actions workflow still applied only
+`0001-device-davx-sim-filter.patch`. Therefore r2/r3 APKs built from those repositories did not
+contain the advertised cold-start changes.
+
+The workflow now applies every `patches/*.patch` in lexical order with `git apply --check` before
+each application, then runs `git diff --check`. The patch contents themselves are unchanged from
+r3; this release exists to ensure they are actually present in the APK.
+
+
+## v0.2.3-r5 patch-chain correction
+
+r5 fixes the patch-generation error exposed by the first r4 GitHub Actions run. The old `0002`
+contained hunks generated from incomplete synthetic file fragments, and the old `0003` was generated
+from the same kind of fixture. That is why `git apply --check` failed after `0001`.
+
+r5 removes `0003` entirely and folds its intended startup-barrier changes into one consolidated
+`0002-contacts-style-cold-start.patch`. The redundant ManageSpeedDial hunk is removed because `0001`
+already contains that change. The ContactsFragment, RecentsHelper, CallContactHelper and MainActivity
+hunks now use the actual post-`0001` code context/line regions.
+
+The workflow still applies every `patches/*.patch` lexically with `git apply --check` before applying
+it. r5 therefore has the intentionally short patch chain `0001 -> 0002`.

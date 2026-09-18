@@ -157,3 +157,7 @@ A cold-start log from the Pixel test device showed that `MainActivity` was displ
 v0.2.1 reached Kotlin compilation and failed at exactly one root error in `SimPhonebook.kt`: the current Commons `Contact.copy(...)` has no named `rawId` parameter.
 
 v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain explicitly included as `new file` entries in the patch. SIM contacts are non-selectable in Phone, so selection behavior does not depend on assigning a synthetic rawId. All other filtering/SIM logic is unchanged. Workflow and signing key are unchanged.
+
+### v0.2.8 diagnostic output fix
+
+`0007-diagnostics-use-system-err.patch` changes only the diagnostic transport introduced by `0006`: markers are written via `System.err.println(...)` instead of `android.util.Log.i(...)`. This avoids release optimizer / logging-removal rules from eliminating the diagnostic calls. There is no functional change to contact filtering or startup loading.

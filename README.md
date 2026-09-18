@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.6
+# Fossify Phone filtered — v0.2.7
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -89,7 +89,7 @@ Die Workflow-Patches werden in lexikalischer Reihenfolge aus `patches/*.patch` a
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.6-1.11.1.apk`
+`Fossify-Phone-filter-0.2.7-1.11.1.apk`
 
 ## Signing freeze
 
@@ -105,7 +105,20 @@ Workflow SHA-256:
 
 ## Lokale Prüfung
 
-`0005-avoid-full-source-enumeration-on-startup.patch` wurde gegen den Post-`0004`-Kontext der beiden betroffenen Dateien mit `git apply --check`/`git diff --check` geprüft. Zusätzlich bleibt der Signing-Key byte-identisch. Ein vollständiger Android-/Gradle-Build wird weiterhin von GitHub Actions durchgeführt.
+`0006-cold-start-diagnostics.patch` wurde syntaktisch mit `git apply --check` und `git diff --check` gegen den Post-`0005`-Kontext der von den bisherigen Patches veränderten Stellen geprüft. Zusätzlich bleibt der Signing-Key byte-identisch. Ein vollständiger Android-/Gradle-Build wird weiterhin von GitHub Actions durchgeführt.
+
+## v0.2.7 cold-start diagnostics
+
+`0006-cold-start-diagnostics.patch` ist absichtlich ein reiner Diagnose-Patch. Er ändert keine Filter- oder Ladeentscheidung, sondern schreibt Zeitmarker unter dem Logcat-Tag `FossifyColdStart`. Erfasst werden insbesondere:
+
+- `ContactsFragment.refreshItems()` inklusive sichtbarem `gotContacts()`,
+- `FavoritesFragment.refreshItems()`,
+- `loadVisiblePhoneContacts()` inklusive RawContacts-Allowlist und ContactsHelper-Callback,
+- `MainActivity.cacheContacts()`,
+- der Recents-Kontakt-Zusammenbau,
+- SIM-Quellen-, SIM-Kontakt- und SIM-Verzeichnisabfragen.
+
+Jeder Marker enthält `+N ms` seit dem ersten Diagnoseereignis sowie den Threadnamen. Damit lässt sich der verbleibende 2–3-Sekunden-Blocker aus einem gefilterten Log eindeutig einem Pfad zuordnen. Nach der Diagnose kann `0006` wieder entfernt oder durch den eigentlichen Fix ersetzt werden.
 
 ## v0.2.6 no-full-source-enumeration cold-start fix
 

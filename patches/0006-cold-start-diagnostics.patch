@@ -1,0 +1,147 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+index 500d65f..b73027e 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+@@ -13,3 +13,6 @@ class MainActivity : SimpleActivity() {
+     fun cacheContacts() {
++        val startedAt = android.os.SystemClock.elapsedRealtime()
++        org.fossify.phone.helpers.ColdStartTrace.mark("MainActivity.cacheContacts START")
+         ContactsHelper(this).getContacts(getAll = false, showOnlyContactsWithNumbers = true) { contacts ->
++            org.fossify.phone.helpers.ColdStartTrace.mark("MainActivity.cacheContacts CALLBACK duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms count=${contacts.size}")
+             contacts.addAll(getCachedSimPhonebookContacts())
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+index 1126f2f..22a4c23 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -10,2 +10,3 @@ import org.fossify.commons.models.contacts.ContactSource
+ import org.fossify.phone.R
++import org.fossify.phone.helpers.ColdStartTrace
+ import org.fossify.phone.helpers.getCachedSimPhonebookContactSources
+@@ -67,2 +68,3 @@ fun Context.loadVisiblePhoneContacts(
+ ) {
++    ColdStartTrace.mark("loadVisiblePhoneContacts START includeSim=$includeSim")
+     val helper = ContactsHelper(this)
+@@ -108,2 +110,3 @@ fun Context.loadVisiblePhoneContacts(
+         result.sort()
++        ColdStartTrace.mark("loadVisiblePhoneContacts PUBLISH includeSim=$includeSim normal=${snapshot.first.size} sim=${snapshot.second.size} total=${result.size}")
+         callback(result)
+@@ -116,2 +119,4 @@ fun Context.loadVisiblePhoneContacts(
+     Thread {
++        val startedAt = android.os.SystemClock.elapsedRealtime()
++        ColdStartTrace.mark("RawContacts source scan START includeSim=$includeSim")
+         val ignored = config.ignoredContactSources
+@@ -145,2 +150,3 @@ fun Context.loadVisiblePhoneContacts(
+         }
++        ColdStartTrace.mark("RawContacts source scan END includeSim=$includeSim duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms allowed=${allowedNames.size}")
+         publishIfReady()
+@@ -151,3 +157,6 @@ fun Context.loadVisiblePhoneContacts(
+     // app provider lookup; the hard allow-list above remains authoritative for the final result.
++    val contactsStartedAt = android.os.SystemClock.elapsedRealtime()
++    ColdStartTrace.mark("ContactsHelper.getContacts REQUEST includeSim=$includeSim")
+     helper.getContacts(getAll = false, showOnlyContactsWithNumbers = true) { contacts ->
++        ColdStartTrace.mark("ContactsHelper.getContacts CALLBACK includeSim=$includeSim duration=${android.os.SystemClock.elapsedRealtime() - contactsStartedAt}ms count=${contacts.size}")
+         synchronized(resultsLock) {
+@@ -160,2 +169,4 @@ fun Context.loadVisiblePhoneContacts(
+         Thread {
++            val simStartedAt = android.os.SystemClock.elapsedRealtime()
++            ColdStartTrace.mark("SIM contact load START")
+             val loadedSimContacts = getSimPhonebookContacts()
+@@ -167,2 +178,3 @@ fun Context.loadVisiblePhoneContacts(
+             }
++            ColdStartTrace.mark("SIM contact load END duration=${android.os.SystemClock.elapsedRealtime() - simStartedAt}ms loaded=${loadedSimContacts.size} visible=${visibleSimContacts.size}")
+             publishIfReady()
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+index 4b97492..ee7ed17 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+@@ -12,3 +12,5 @@ package org.fossify.phone.fragments
+     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
++        org.fossify.phone.helpers.ColdStartTrace.mark("ContactsFragment.refreshItems START invalidate=$invalidate")
+         context.loadVisiblePhoneContacts(includeSim = true) { contacts ->
++            org.fossify.phone.helpers.ColdStartTrace.mark("ContactsFragment load callback count=${contacts.size}")
+             allContacts = contacts
+@@ -17,3 +19,5 @@ package org.fossify.phone.fragments
+             activity?.runOnUiThread {
++                org.fossify.phone.helpers.ColdStartTrace.mark("ContactsFragment UI gotContacts START count=${allContacts.size}")
+                 gotContacts(allContacts)
++                org.fossify.phone.helpers.ColdStartTrace.mark("ContactsFragment UI gotContacts END")
+                 callback?.invoke()
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
+index 3c9e4b9..2d9fc21 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/FavoritesFragment.kt
+@@ -12,3 +12,5 @@ package org.fossify.phone.fragments
+     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
++        org.fossify.phone.helpers.ColdStartTrace.mark("FavoritesFragment.refreshItems START invalidate=$invalidate")
+         context.loadVisiblePhoneContacts(includeSim = false) { contacts ->
++            org.fossify.phone.helpers.ColdStartTrace.mark("FavoritesFragment load callback count=${contacts.size}")
+             val favorites = ArrayList(contacts.filter { it.starred == 1 })
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/ColdStartTrace.kt b/app/src/main/kotlin/org/fossify/phone/helpers/ColdStartTrace.kt
+new file mode 100644
+index 0000000..228d77c
+--- /dev/null
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/ColdStartTrace.kt
+@@ -0,0 +1,14 @@
++package org.fossify.phone.helpers
++
++import android.os.SystemClock
++import android.util.Log
++
++object ColdStartTrace {
++    private const val TAG = "FossifyColdStart"
++    private val baseMs = SystemClock.elapsedRealtime()
++
++    fun mark(message: String) {
++        val elapsed = SystemClock.elapsedRealtime() - baseMs
++        Log.i(TAG, "+${elapsed}ms [${Thread.currentThread().name}] $message")
++    }
++}
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+index 7ae275f..59f39c6 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+@@ -15,2 +15,3 @@ package org.fossify.phone.helpers
+                 contacts.addAll(context.getCachedSimPhonebookContacts())
++                ColdStartTrace.mark("RecentsHelper contacts assembled count=${contacts.size} private=${privateContacts.size}")
+ 
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
+index 5648692..6931a27 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
+@@ -36,4 +36,7 @@ fun Contact.isSimPhonebookContact(): Boolean = source.isSimPhonebookSourceName()
+ fun Context.getSimPhonebookSources(): List<SimPhonebookSource> {
++    val startedAt = android.os.SystemClock.elapsedRealtime()
++    ColdStartTrace.mark("getSimPhonebookSources START")
+     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+         cachedSimPhonebookSources = emptyList()
++        ColdStartTrace.mark("getSimPhonebookSources END unsupported duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms")
+         return emptyList()
+@@ -87,2 +90,3 @@ fun Context.getSimPhonebookSources(): List<SimPhonebookSource> {
+     cachedSimPhonebookSources = sources
++    ColdStartTrace.mark("getSimPhonebookSources END duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms sources=${sources.size}")
+     return sources
+@@ -114,2 +118,4 @@ fun Context.getCachedSimPhonebookContacts(): ArrayList<Contact> =
+ fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
++    val startedAt = android.os.SystemClock.elapsedRealtime()
++    ColdStartTrace.mark("getSimPhonebookContacts START")
+     val result = ArrayList<Contact>()
+@@ -117,2 +123,3 @@ fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
+         cachedSimPhonebookContacts = emptyList()
++        ColdStartTrace.mark("getSimPhonebookContacts END unsupported duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms")
+         return result
+@@ -130,2 +137,3 @@ fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
+     cachedSimPhonebookContacts = result.toList()
++    ColdStartTrace.mark("getSimPhonebookContacts END duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms contacts=${result.size}")
+     return result
+@@ -134,2 +142,4 @@ fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
+ private fun Context.querySimPhonebookDirectory(source: SimPhonebookSource): List<Contact> = runCatching {
++    val startedAt = android.os.SystemClock.elapsedRealtime()
++    ColdStartTrace.mark("SIM directory query START sub=${source.subscriptionId} slot=${source.slotIndex}")
+     val result = ArrayList<Contact>()
+@@ -160,3 +170,6 @@ private fun Context.querySimPhonebookDirectory(source: SimPhonebookSource): List
+ 
++    ColdStartTrace.mark("SIM directory query END sub=${source.subscriptionId} duration=${android.os.SystemClock.elapsedRealtime() - startedAt}ms contacts=${result.size}")
+     result
++}.onFailure { error ->
++    ColdStartTrace.mark("SIM directory query ERROR sub=${source.subscriptionId} ${error.javaClass.simpleName}: ${error.message}")
+ }.getOrDefault(emptyList())

@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.3-r2
+# Fossify Phone filtered — v0.2.2
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -75,7 +75,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.3-r2-1.11.1.apk`
+`Fossify-Phone-filter-0.2.2-1.11.1.apk`
 
 ## Signing freeze
 
@@ -99,28 +99,6 @@ v0.2.1 reached Kotlin compilation and failed at exactly one root error in `SimPh
 
 v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain explicitly included as `new file` entries in the patch. SIM contacts are non-selectable in Phone, so selection behavior does not depend on assigning a synthetic rawId. All other filtering/SIM logic is unchanged. Workflow and signing key are unchanged.
 
+## v0.2.3-r3 hard first-paint barrier
 
-## v0.2.3-r2 — Kontakte-Cold-Start sauber auf Phone übertragen
-
-Dieser Stand basiert wieder direkt auf dem unveränderten v0.2.2-Patch-Repository aus dem ersten Test.
-Die späteren Diagnose- und Einzelversuchs-Patches sind nicht enthalten.
-
-`0002-contacts-style-cold-start.patch` überträgt den funktionierenden Ablauf der gefilterten
-Fossify-Contacts-App:
-
-- leichter `RawContacts`-First-Paint,
-- normale Device/DAVx5-Kontakte unabhängig von SIM laden und sofort veröffentlichen,
-- SIM-Quellen und SIM-Kontakte cachen,
-- SIM erst separat laden und anschließend in einem zweiten Ergebnis mergen,
-- MainActivity-Cache und Recents lesen beim Startup nur den SIM-Cache.
-
-Phone besitzt zusätzlich Startup-Pfade, die Contacts nicht hat. Deshalb schließt
-`0003-phone-startup-sim-barrier.patch` die Phone-spezifische Lücke:
-
-- `CallContactHelper` liest beim normalen App-Startup nur den SIM-Cache statt synchron
-  `SimPhonebookContract` aufzurufen,
-- die echte SIM-Abfrage startet erst nach dem ersten gezeichneten normalen Kontakt-Frame,
-- `cacheContacts()` wird ebenfalls erst nach diesem Frame und außerhalb des UI-Threads gestartet.
-
-Direkte SIM-Abfragen bleiben nur dort erhalten, wo sie nicht zum Launcher-Cold-Start gehören
-(z. B. Call-Screening bzw. explizites Öffnen des Quellenfilters).
+This clean rebuild starts from the original v0.2.2 repository. Contacts and Favorites are the only immediate startup refreshes. MainActivity cache work and Recents are delayed by 3 seconds, and SIM discovery is delayed by 3.5 seconds after the authoritative normal-contact result. This intentionally prevents Phone-specific provider consumers from overlapping the first contact frame after reboot.

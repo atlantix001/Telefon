@@ -1,0 +1,79 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+index 9347f42..8c98973 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+@@ -1,10 +1,19 @@
+ package org.fossify.phone.activities
+ class MainActivity {
+     fun refreshFragments() {
+-        cacheContacts()
++        // Keep the first visible Phone frame as small as the working Contacts cold-start path:
++        // only the two contact-list fragments are allowed to start immediately. Recents and the
++        // global contact cache both perform additional provider work and are not needed to paint
++        // the initial Contacts/Favorites UI.
+         getContactsFragment()?.refreshItems()
+         getFavoritesFragment()?.refreshItems()
+-        getRecentsFragment()?.refreshItems()
++
++        binding.root.postDelayed({
++            if (!isDestroyed && !isFinishing) {
++                cacheContacts()
++                getRecentsFragment()?.refreshItems()
++            }
++        }, 3000L)
+     }
+ 
+     fun cacheContacts() {}
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+index 1120848..e1c6504 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -5,10 +5,11 @@ fun f() {
+         callback(published)
+ 
+         if (requestSim) {
+-            // The callback above queues the normal Phone UI update first. Queue the SIM loader on
+-            // the main looper afterwards, then do the actual provider work on its shared worker.
+-            // This keeps first paint ahead of the cold SIM provider after a reboot.
+-            Handler(Looper.getMainLooper()).post {
++            // Phone has more startup consumers than Contacts. A mere background thread is not a
++            // sufficient first-paint barrier here: on a cold boot the telephony/content-provider
++            // work can overlap the UI's first traversal. Give the normal contacts/favorites frame
++            // an explicit head start; SIM remains fully asynchronous and is merged afterwards.
++            Handler(Looper.getMainLooper()).postDelayed({
+                 loadSimPhonebookContactsAsync { loadedSimContacts ->
+                     if (loadedSimContacts.isEmpty()) {
+                         return@loadSimPhonebookContactsAsync
+@@ -25,6 +26,6 @@ fun f() {
+                     normal.sort()
+                     callback(normal)
+                 }
+-            }
++            }, 3500L)
+         }
+ }
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+index fc0ddef..ac003d1 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+@@ -5,7 +5,6 @@ fun f() {
+             previewCallback = previewCallback,
+         ) { contacts ->
+             allContacts = contacts
+-            (activity as MainActivity).cacheContacts()
+ 
+             activity?.runOnUiThread {
+                 gotContacts(allContacts)
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+index 0f8c753..5e3738a 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+@@ -3,7 +3,7 @@ fun f() {
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
+-                contacts.addAll(context.getSimPhonebookContacts())
++                contacts.addAll(context.getCachedSimPhonebookContacts())
+ 
+                 val contactsWithMultipleNumbers = contacts.filter { it.phoneNumbers.size > 1 }
+ }

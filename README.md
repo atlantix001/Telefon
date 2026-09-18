@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.2
+# Fossify Phone filtered — v0.2.3
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -49,9 +49,24 @@ Auf dem verifizierten Pixel-Testgerät liefert `content://com.android.simphonebo
 
 Phone liest SIM-Kontakte nur zur Anzeige/Anrufauswahl; es bearbeitet oder löscht sie nicht. Dafür ist die gefilterte Fossify-Contacts-App zuständig.
 
-Synthetische SIM-Kontakte erhalten eindeutige negative `id` und `rawId`, weil Fossify Phone `rawId` als Auswahl-Key benutzt. Langdruck-/CAB-Aktionen auf SIM-Kontakten sind deaktiviert, damit Phone keine normalen ContactsProvider-Lösch-/Bearbeitungsaktionen auf SIM-Datensätze anwendet.
+Synthetische SIM-Kontakte erhalten eine eindeutige negative `id`. Ein synthetischer `rawId` wird bewusst nicht gesetzt, da die aktuelle Commons-`Contact.copy(...)`-Signatur diesen Parameter nicht anbietet. Langdruck-/CAB-Aktionen auf SIM-Kontakten sind deaktiviert, damit Phone keine normalen ContactsProvider-Lösch-/Bearbeitungsaktionen auf SIM-Datensätze anwendet.
 
 Da ein SIM-Datensatz keine normale ContactsProvider-Detail-URI besitzt, fällt ein Detail-Aufruf für einen SIM-Kontakt in Phone auf die normale Anrufaktion zurück.
+
+
+## Cold-Start-Ablauf
+
+Der Kaltstart übernimmt bewusst den bereits verifizierten Ablauf aus der gefilterten Fossify-Contacts-App:
+
+1. Für den Kontakte-Tab kann sofort eine leichte `RawContacts`-Namens-/Quellen-Vorschau erscheinen.
+2. Quellen-Ermittlung und normaler `ContactsHelper`-Kontaktlauf starten unabhängig voneinander.
+3. Sobald beide normalen Ergebnisse vorliegen, werden Device-/DAVx5-Kontakte veröffentlicht — **ohne auf SIM zu warten**.
+4. Erst nachdem dieses normale Ergebnis für die UI angestoßen wurde, startet die SIM-Ermittlung separat.
+5. Ein nicht-leeres sichtbares SIM-Ergebnis wird anschließend mit einem zweiten Refresh ergänzt.
+
+Phone-spezifisch wird die SIM-Ermittlung zusätzlich pro Prozess dedupliziert: parallele Fragment-/Startup-Aufrufe teilen sich eine einzige laufende `SimPhonebookContract`-Abfrage. `RecentsHelper` und `MainActivity.cacheContacts()` lesen beim Startup nur den SIM-Cache und starten keine zweite kalte SIM-Abfrage.
+
+Die direkte SIM-Abfrage in Call-Screening/Caller-ID bleibt bewusst erhalten, da diese Pfade auch ohne zuvor geöffnete Phone-App funktionieren müssen.
 
 ## Caller-ID / Anrufauflösung
 
@@ -75,7 +90,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.2-1.11.1.apk`
+`Fossify-Phone-filter-0.2.3-1.11.1.apk`
 
 ## Signing freeze
 
@@ -87,14 +102,22 @@ Dieser Key wurde als initialer fester Key für die Phone-Filter-Linie erzeugt un
 
 Workflow SHA-256:
 
-`1d5acf6b344098e93d05375ff6626d317a409fd96907d3cd66c281d20ee4f4bb`
+`d0a5480869b97fc295d50fb06e9a3a57100a15b6a3dcf2369e0a790a2a1d2e79`
 
 ## Lokale Prüfung
 
-Der Patch wurde gegen den bereitgestellten Source-Snapshot von Fossify Phone 1.11.1 statisch mit `git apply --check` und `git diff --check` geprüft. In dieser Umgebung wurde kein vollständiger Android-Build behauptet; der Compile-/APK-Test erfolgt über GitHub Actions.
+`0002-contacts-style-cold-start.patch` wurde statisch gegen den exakten Post-`0001`-Inhalt der beiden von `0001` neu angelegten Custom-Dateien sowie gegen die von `0001` erzeugten Zielkontexte in `MainActivity`, `ContactsFragment`, `ManageSpeedDialActivity` und `RecentsHelper` mit `git apply --check` und `git diff --check` geprüft.
+
+Ein vollständiger Android-/Gradle-Build wurde in dieser Umgebung nicht ausgeführt; der Compile-/APK-Test erfolgt über GitHub Actions.
 
 ## v0.2.2 compile fix
 
 v0.2.1 reached Kotlin compilation and failed at exactly one root error in `SimPhonebook.kt`: the current Commons `Contact.copy(...)` has no named `rawId` parameter.
 
 v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain explicitly included as `new file` entries in the patch. SIM contacts are non-selectable in Phone, so selection behavior does not depend on assigning a synthetic rawId. All other filtering/SIM logic is unchanged. Workflow and signing key are unchanged.
+
+## v0.2.3 cold-start port
+
+Ausgangspunkt ist wieder der unangetastete v0.2.2-Patchstand (`0001`). `0002-contacts-style-cold-start.patch` portiert den funktionierenden Kontakte-Kaltstart in einem zusammenhängenden Patch statt die früheren Diagnose-/Zwischenstände weiterzuführen.
+
+Enthalten sind `RawContacts`-First-Paint, nicht blockierende normale Provider-Veröffentlichung, spätes SIM-Merge, SIM-Source-/Kontakt-Cache, In-Flight-Deduplizierung sowie cache-only Startup-Zugriffe für Recents und `cacheContacts()`. Der Workflow wendet alle Patches lexikographisch an.

@@ -49,12 +49,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          for patch in patches/*.patch; do
+          test -f patches/series
+          while IFS= read -r entry || [[ -n "$entry" ]]; do
+            [[ -z "$entry" || "$entry" == \#* ]] && continue
+            patch="patches/$entry"
+            test -f "$patch"
             echo "Applying $patch"
             git -C upstream-phone apply --check "$GITHUB_WORKSPACE/$patch"
             git -C upstream-phone apply "$GITHUB_WORKSPACE/$patch"
-          done
+          done < patches/series
           git -C upstream-phone diff --check
 
       - name: Configure fixed release signing key

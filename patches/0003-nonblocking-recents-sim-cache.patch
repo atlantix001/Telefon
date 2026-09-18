@@ -1,0 +1,12 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+@@ -42,7 +42,7 @@ class RecentsHelper(private val context: Context) {
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
+-                contacts.addAll(context.getSimPhonebookContacts())
++                contacts.addAll(context.getCachedSimPhonebookContacts())
+ 
+                 this.queryLimit = queryLimit
+                 val recentCalls = if (previousRecents.isNotEmpty()) {

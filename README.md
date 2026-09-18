@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.3
+# Fossify Phone filtered — v0.2.4
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -88,7 +88,7 @@ Die Workflow-Patches werden in lexikalischer Reihenfolge aus `patches/*.patch` a
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.3-1.11.1.apk`
+`Fossify-Phone-filter-0.2.4-1.11.1.apk`
 
 ## Signing freeze
 
@@ -105,6 +105,12 @@ Workflow SHA-256:
 ## Lokale Prüfung
 
 `0002-nonblocking-sim-cold-start.patch` wurde statisch gegen den exakten Post-`0001`-Stand der von `0001` neu angelegten Custom-Dateien sowie gegen den dort erzeugten `MainActivity`-Kontext mit `git apply --check` und `git diff --check` geprüft. Ein vollständiger Android-Build wird weiterhin von GitHub Actions durchgeführt.
+
+## v0.2.4 recents cold-start fix
+
+A cold-start log from the Pixel test device showed that `MainActivity` was displayed quickly, but the UI thread then spent about two seconds handling the initial focus event and skipped hundreds of frames. The remaining startup-time direct SIM read was in `RecentsHelper`: call-history contact resolution still called `getSimPhonebookContacts()` synchronously after the normal ContactsProvider result arrived.
+
+`0003-nonblocking-recents-sim-cache.patch` changes only that startup path to use `getCachedSimPhonebookContacts()`. SIM discovery itself remains on the background path introduced by `0002`; the call-screening path keeps its direct lookup because it must work even when the Phone UI has not populated the in-memory cache.
 
 ## v0.2.3 non-blocking SIM cold start
 

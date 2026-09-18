@@ -1,0 +1,107 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+index f94984a..20b752b 100644
+--- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+@@ -11,7 +11,7 @@ import org.fossify.phone.models.Events
+ 
+ class MainActivity : SimpleActivity() {
+     fun cacheContacts() {
+-        ContactsHelper(this).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
++        ContactsHelper(this).getContacts(getAll = false, showOnlyContactsWithNumbers = true) { contacts ->
+             contacts.addAll(getCachedSimPhonebookContacts())
+             contacts.sort()
+ 
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+index aa9500d..b1cd91c 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -1,6 +1,7 @@
+ package org.fossify.phone.extensions
+ 
+ import android.content.Context
++import android.provider.ContactsContract.RawContacts
+ import org.fossify.commons.extensions.getVisibleContactSources
+ import org.fossify.commons.helpers.ContactsHelper
+ import org.fossify.commons.helpers.SMT_PRIVATE
+@@ -79,12 +80,12 @@ fun Context.loadVisiblePhoneContacts(
+             if (sources == null || contacts == null) {
+                 null
+             } else {
+-                val normalContacts = contacts.filter { it.source in sources }
++                val normalContacts = contacts.filter { it.source in sources && it.phoneNumbers.isNotEmpty() }
+                 val sim = simContacts
+                 when {
+                     !providerResultPublished -> {
+-                        // Publish the complete ContactsProvider result immediately. A slow SIM
+-                        // provider must never hold back first paint of the Phone contacts list.
++                        // Publish the normal ContactsProvider result as soon as it is ready. SIM
++                        // discovery stays fully independent and can append a second result later.
+                         providerResultPublished = true
+                         if (sim != null) {
+                             simResultPublished = true
+@@ -94,8 +95,6 @@ fun Context.loadVisiblePhoneContacts(
+ 
+                     sim != null && !simResultPublished -> {
+                         simResultPublished = true
+-                        // Merge non-empty SIM results later. Avoid a second identical refresh for
+-                        // empty SIM phonebooks.
+                         if (sim.isEmpty()) null else Pair(normalContacts, sim)
+                     }
+ 
+@@ -110,20 +109,47 @@ fun Context.loadVisiblePhoneContacts(
+         callback(result)
+     }
+ 
+-    helper.getContactSources { allSources ->
+-        val visibleNormalSources = getVisibleContactSources().toHashSet()
+-        val visibleAllowed = filterAllowedContactSources(allSources)
+-            .asSequence()
+-            .filter { it.name in visibleNormalSources }
+-            .mapTo(HashSet()) { it.name }
++    // Do not use ContactsHelper.getContactSources() here. Fossify's implementation always adds
++    // the private app-storage source. RawContacts already exposes the account name/type needed by
++    // this hard allow-list without gating first paint on Fossify's broader source enumeration.
++    // and is the same lightweight provider table used by the Contacts mod for fast first paint.
++    Thread {
++        val ignored = config.ignoredContactSources
++        val allowedNames = HashSet<String>()
++        val projection = arrayOf(RawContacts.ACCOUNT_NAME, RawContacts.ACCOUNT_TYPE)
++
++        runCatching {
++            contentResolver.query(
++                RawContacts.CONTENT_URI,
++                projection,
++                "${RawContacts.DELETED} = 0",
++                null,
++                null,
++            )?.use { cursor ->
++                val accountNameIndex = cursor.getColumnIndexOrThrow(RawContacts.ACCOUNT_NAME)
++                val accountTypeIndex = cursor.getColumnIndexOrThrow(RawContacts.ACCOUNT_TYPE)
++
++                while (cursor.moveToNext()) {
++                    val accountName = cursor.getString(accountNameIndex).orEmpty()
++                    val accountType = cursor.getString(accountTypeIndex).orEmpty()
++                    val source = ContactSource(accountName, accountType, accountName)
++                    if (isAllowedContactSource(source) && source.getFullIdentifier() !in ignored) {
++                        allowedNames += source.name
++                    }
++                }
++            }
++        }
+ 
+         synchronized(resultsLock) {
+-            allowedVisibleNames = visibleAllowed
++            allowedVisibleNames = allowedNames
+         }
+         publishIfReady()
+-    }
++    }.start()
+ 
+-    helper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
++    // getAll=true calls Commons' full source enumeration. That path includes Fossify's private
++    // source even though this build never displays it. The visible-source path avoids that cross-
++    // app provider lookup; the hard allow-list above remains authoritative for the final result.
++    helper.getContacts(getAll = false, showOnlyContactsWithNumbers = true) { contacts ->
+         synchronized(resultsLock) {
+             providerContacts = contacts
+         }

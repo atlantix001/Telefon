@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.5
+# Fossify Phone filtered — v0.2.6
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -53,16 +53,17 @@ Synthetische SIM-Kontakte erhalten eine eindeutige negative `id`. Sie werden in 
 
 Da ein SIM-Datensatz keine normale ContactsProvider-Detail-URI besitzt, fällt ein Detail-Aufruf für einen SIM-Kontakt in Phone auf die normale Anrufaktion zurück.
 
-## Kaltstart / nicht blockierende SIM-Abfrage
+## Kaltstart / nicht blockierende Quellen- und SIM-Abfrage
 
-Der Kontakte-Tab wartet beim Kaltstart nicht mehr auf den langsamen `SimPhonebookContract`-Provider:
+Der Kontakte-Tab wartet beim Kaltstart weder auf Fossifys vollständige Quellen-Ermittlung noch auf den langsamen `SimPhonebookContract`-Provider:
 
-1. ContactsProvider-Quellen und normale Kontakte werden unabhängig gestartet,
-2. sobald beide normalen Ergebnisse vorliegen, werden Geräte-/DAVx5-Kontakte sofort veröffentlicht,
+1. die erlaubten Geräte-/DAVx5-Quellen werden direkt und leichtgewichtig aus `RawContacts` ermittelt,
+2. normale Kontakte werden mit `getAll = false` geladen und anschließend durch die harte Allowlist gefiltert,
 3. die SIM-Abfrage läuft separat im Hintergrund,
-4. vorhandene sichtbare SIM-Kontakte werden anschließend mit einem zweiten Refresh ergänzt.
+4. normale Kontakte werden veröffentlicht, sobald RawContacts-Allowlist und ContactsProvider-Ergebnis vorliegen,
+5. vorhandene sichtbare SIM-Kontakte werden anschließend mit einem zweiten Refresh ergänzt.
 
-Die SIM-Quellen werden nach der Hintergrundabfrage im Speicher gecacht. `MainActivity.cacheContacts()` verwendet ebenfalls nur den bereits vorhandenen SIM-Kontaktcache und löst dadurch keine synchrone SIM-Abfrage im UI-Callback mehr aus. Leere SIM-Ergebnisse erzeugen keinen zweiten identischen Listen-Refresh.
+`MainActivity.cacheContacts()` verwendet ebenfalls `getAll = false` und nur den bereits vorhandenen SIM-Kontaktcache. Dadurch wird im UI-Startup kein vollständiger Fossify-Quellenlauf mehr angefordert. Leere SIM-Ergebnisse erzeugen keinen zweiten identischen Listen-Refresh.
 
 ## Caller-ID / Anrufauflösung
 
@@ -88,7 +89,7 @@ Die Workflow-Patches werden in lexikalischer Reihenfolge aus `patches/*.patch` a
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.5-1.11.1.apk`
+`Fossify-Phone-filter-0.2.6-1.11.1.apk`
 
 ## Signing freeze
 
@@ -104,7 +105,18 @@ Workflow SHA-256:
 
 ## Lokale Prüfung
 
-`0004-skip-private-cache-provider-on-startup.patch` wurde gegen den bereits durch `0002` geänderten `MainActivity.cacheContacts()`-Kontext mit `git apply --check` und `git diff --check` geprüft. Der Patch entfernt nur den im UI-Startup nicht benötigten Fossify-Private-Contacts-Providerzugriff; ein vollständiger Android-Build wird weiterhin von GitHub Actions durchgeführt.
+`0005-avoid-full-source-enumeration-on-startup.patch` wurde gegen den Post-`0004`-Kontext der beiden betroffenen Dateien mit `git apply --check`/`git diff --check` geprüft. Zusätzlich bleibt der Signing-Key byte-identisch. Ein vollständiger Android-/Gradle-Build wird weiterhin von GitHub Actions durchgeführt.
+
+## v0.2.6 no-full-source-enumeration cold-start fix
+
+Der Kaltstart-Log von v0.2.5 zeigt die `MainActivity`-Surface um 10:46:13.589 und bereits 7 ms später das Auftauen von `org.fossify.contacts`. Der Phone-Hauptthread taucht im Log erst rund 2,94 s später wieder auf. `0004` hatte damit zwar den expliziten `getMyContactsCursor()`-Zugriff entfernt, aber nicht die zwei indirekten Vollquellenpfade.
+
+`0005-avoid-full-source-enumeration-on-startup.patch` entfernt diese beiden verbliebenen Startup-Pfade:
+
+- `loadVisiblePhoneContacts()` verwendet nicht mehr `ContactsHelper.getContactSources()` als Gate und lädt normale Kontakte nicht mehr mit `getAll = true`; die harte Device/DAVx5-Allowlist wird stattdessen direkt über `RawContacts.ACCOUNT_NAME`/`ACCOUNT_TYPE` aufgebaut.
+- `MainActivity.cacheContacts()` wechselt ebenfalls von `getAll = true` auf `getAll = false`.
+
+Damit kann Commons im Kontakt-Startup nicht mehr über `getAll = true` auf die vollständige Quellenliste inklusive `SMT_PRIVATE` wechseln. SIM bleibt weiterhin vollständig separat im Hintergrund und wird aus dem Cache ergänzt.
 
 ## v0.2.5 private-provider cold-start fix
 

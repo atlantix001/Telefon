@@ -1,0 +1,18 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+--- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
++++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
+@@ -11,14 +11,7 @@
+ 
+ class MainActivity : SimpleActivity() {
+     fun cacheContacts() {
+-        val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
+         ContactsHelper(this).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
+-            if (SMT_PRIVATE !in config.ignoredContactSources) {
+-                val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
+-                if (privateContacts.isNotEmpty()) {
+-                    contacts.addAll(privateContacts)
+-                }
+-            }
+             contacts.addAll(getCachedSimPhonebookContacts())
+             contacts.sort()
+ 

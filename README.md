@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.4
+# Fossify Phone filtered — v0.2.5
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -88,7 +88,7 @@ Die Workflow-Patches werden in lexikalischer Reihenfolge aus `patches/*.patch` a
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.4-1.11.1.apk`
+`Fossify-Phone-filter-0.2.5-1.11.1.apk`
 
 ## Signing freeze
 
@@ -104,7 +104,13 @@ Workflow SHA-256:
 
 ## Lokale Prüfung
 
-`0002-nonblocking-sim-cold-start.patch` wurde statisch gegen den exakten Post-`0001`-Stand der von `0001` neu angelegten Custom-Dateien sowie gegen den dort erzeugten `MainActivity`-Kontext mit `git apply --check` und `git diff --check` geprüft. Ein vollständiger Android-Build wird weiterhin von GitHub Actions durchgeführt.
+`0004-skip-private-cache-provider-on-startup.patch` wurde gegen den bereits durch `0002` geänderten `MainActivity.cacheContacts()`-Kontext mit `git apply --check` und `git diff --check` geprüft. Der Patch entfernt nur den im UI-Startup nicht benötigten Fossify-Private-Contacts-Providerzugriff; ein vollständiger Android-Build wird weiterhin von GitHub Actions durchgeführt.
+
+## v0.2.5 private-provider cold-start fix
+
+Der zweite Kaltstart-Log zeigt direkt nach dem Aufbau der `MainActivity` eine Prozessbeziehung von `org.fossify.phone` zu `org.fossify.contacts`. `ContactsFragment` ruft `MainActivity.cacheContacts()` noch vor der sichtbaren Veröffentlichung der Kontaktliste auf. Dort wurde bisher trotz der harten Allowlist weiterhin bedingungslos `getMyContactsCursor()` geöffnet; erst danach wurde geprüft, ob `SMT_PRIVATE` ignoriert ist.
+
+`0004-skip-private-cache-provider-on-startup.patch` entfernt diesen für die gefilterte Variante unnötigen Private-Contacts-Providerzugriff aus `cacheContacts()`. Normale Android-/DAVx5-Kontakte sowie der bereits im Hintergrund gefüllte SIM-Cache bleiben unverändert. Der private Pfad in `RecentsHelper` wird in diesem Diagnose-Patch bewusst noch nicht gleichzeitig verändert, damit die im Log belegte Startup-Ursache isoliert getestet werden kann.
 
 ## v0.2.4 recents cold-start fix
 

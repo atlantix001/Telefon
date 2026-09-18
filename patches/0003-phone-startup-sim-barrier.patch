@@ -1,0 +1,97 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+index 2116fca..a62e039 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -3,28 +3,31 @@ package org.fossify.phone.extensions
+ import android.content.Context
+ import android.os.Handler
+ import android.os.Looper
++import android.view.Choreographer
+ import org.fossify.commons.extensions.getVisibleContactSources
+ 
+         if (requestSim) {
+-            // The callback above queues the normal Phone UI update first. Queue the SIM loader on
+-            // the main looper afterwards, then do the actual provider work on its shared worker.
+-            // This keeps first paint ahead of the cold SIM provider after a reboot.
++            // Queue the SIM work only after the already-published normal contact list has had a
++            // chance to draw. Phone has other startup consumers that resolve call contacts, so
++            // merely moving the SIM query to another thread is not enough to guarantee first paint.
+             Handler(Looper.getMainLooper()).post {
+-                loadSimPhonebookContactsAsync { loadedSimContacts ->
+-                    if (loadedSimContacts.isEmpty()) {
+-                        return@loadSimPhonebookContactsAsync
+-                    }
++                Choreographer.getInstance().postFrameCallback {
++                    loadSimPhonebookContactsAsync { loadedSimContacts ->
++                        if (loadedSimContacts.isEmpty()) {
++                            return@loadSimPhonebookContactsAsync
++                        }
+ 
+-                    val visibleWithSim = getVisibleContactSourcesIncludingSim().toHashSet()
+-                    val visibleSimContacts = loadedSimContacts.filter { it.source in visibleWithSim }
+-                    if (visibleSimContacts.isEmpty()) {
+-                        return@loadSimPhonebookContactsAsync
+-                    }
++                        val visibleWithSim = getVisibleContactSourcesIncludingSim().toHashSet()
++                        val visibleSimContacts = loadedSimContacts.filter { it.source in visibleWithSim }
++                        if (visibleSimContacts.isEmpty()) {
++                            return@loadSimPhonebookContactsAsync
++                        }
+ 
+-                    val normal = normalSnapshot() ?: return@loadSimPhonebookContactsAsync
+-                    normal.addAll(visibleSimContacts)
+-                    normal.sort()
+-                    callback(normal)
++                        val normal = normalSnapshot() ?: return@loadSimPhonebookContactsAsync
++                        normal.addAll(visibleSimContacts)
++                        normal.sort()
++                        callback(normal)
++                    }
+                 }
+             }
+         }
+diff --git a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+index 5b7bc1e..5ab1733 100644
+--- a/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
++++ b/app/src/main/kotlin/org/fossify/phone/fragments/ContactsFragment.kt
+@@ -2,6 +2,7 @@ package org.fossify.phone.fragments
+ 
+ import android.content.Context
+ import android.util.AttributeSet
++import android.view.Choreographer
+ import org.fossify.commons.adapters.MyRecyclerViewAdapter
+ 
+     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
+@@ -21,13 +22,18 @@ import org.fossify.commons.adapters.MyRecyclerViewAdapter
+             previewCallback = previewCallback,
+         ) { contacts ->
+             allContacts = contacts
+-            (activity as MainActivity).cacheContacts()
+ 
+             activity?.runOnUiThread {
+                 gotContacts(allContacts)
+                 if (!initialCallbackInvoked) {
+                     initialCallbackInvoked = true
+                     callback?.invoke()
++
++                    // cacheContacts() must not be allowed to sit in front of the first rendered
++                    // contact frame. Its provider/cache work is postponed and moved off the UI thread.
++                    Choreographer.getInstance().postFrameCallback {
++                        Thread { (activity as? MainActivity)?.cacheContacts() }.start()
++                    }
+                 }
+             }
+         }
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+index 511c381..6ebb387 100644
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/CallContactHelper.kt
+@@ -1,7 +1,7 @@
+                 if (privateContacts.isNotEmpty()) {
+                     contacts.addAll(privateContacts)
+                 }
+-                contacts.addAll(context.getSimPhonebookContacts())
++                contacts.addAll(context.getCachedSimPhonebookContacts())
+ 
+                 val contactsWithMultipleNumbers = contacts.filter { it.phoneNumbers.size > 1 }
+                 val numbersToContactIDMap = HashMap<String, Int>()

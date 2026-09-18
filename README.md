@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.3
+# Fossify Phone filtered — v0.2.4
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -46,7 +46,7 @@ SIM wird als eigene Quelle `SIM` bzw. `SIM 1` / `SIM 2` geführt. Die SIM-Anzahl
 Auf dem verifizierten Pixel-Testgerät liefert `content://com.android.simphonebook/subid/1/adn` 18 ADN-Datensätze. Der Reader verwendet zuerst genau diese Sammelabfrage und fällt bei Bedarf auf Einzeldatensatz-URIs zurück.
 
 
-## Coldstart / SIM-Pipeline in v0.2.3
+## Coldstart / SIM-Pipeline in v0.2.4
 
 Der in Fossify Contacts verifizierte Coldstart-Ansatz wurde auf die Phone-spezifischen Ladepfade übertragen. Die normale ContactsProvider-Liste wird nicht mehr von `SimPhonebookContract` blockiert:
 
@@ -89,7 +89,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.3-1.11.1.apk`
+`Fossify-Phone-filter-0.2.4-1.11.1.apk`
 
 ## Signing freeze
 
@@ -101,26 +101,31 @@ Dieser Key wurde als initialer fester Key für die Phone-Filter-Linie erzeugt un
 
 Workflow SHA-256:
 
-`d0a5480869b97fc295d50fb06e9a3a57100a15b6a3dcf2369e0a790a2a1d2e79`
+`168acb0bbdd5623c35993b79252f74213e41f1dc9d5ed07957501bf3ed77525b`
 
 ## Lokale Prüfung
 
-Der bestehende v0.2.2-Basispatch bleibt unverändert. Der neue v0.2.3-Coldstart-Patch wurde mit `git apply --check` und `git diff --check` gegen einen rekonstruierten Post-`0001`-Stand der vier betroffenen Dateien geprüft. Zusätzlich wurden die relevanten Dateien des gepinnten Upstreams 1.11.1 gegengeprüft. Ein vollständiger Android-Build wurde in dieser Umgebung nicht ausgeführt; der Compile-/APK-Test erfolgt über GitHub Actions.
+Der v0.2.4-Hotfix vermeidet die fehleranfällige Patch-auf-Patch-Kette: Der Coldstart-Fix ist direkt in `patches/0001-device-davx-sim-filter.patch` integriert. Die Unified-Diff-Struktur wurde vollständig geprüft (`git apply --numstat`), alle Hunk-Zähler stimmen, und die neuen MainActivity-Kontexte entsprechen dem gepinnten 1.11.1-Upstream. Der vollständige Kotlin-/APK-Compile-Test erfolgt über GitHub Actions.
 
+## v0.2.4 coldstart hotfix
 
-## v0.2.3 coldstart fix
-
-- neuer Patch `patches/0002-nonblocking-sim-cold-start.patch`,
-- normale Kontaktliste wird nicht mehr auf SIM gewartet,
-- SIM-Quellen-/Kontaktdaten erhalten nicht-blockierende Caches,
+- Coldstart-/SIM-Änderungen direkt in `patches/0001-device-davx-sim-filter.patch` integriert,
+- neue `patches/series` als explizite Liste der tatsächlich anzuwendenden Patches,
+- ein eventuell noch vorhandener alter `0002-nonblocking-sim-cold-start.patch` wird ignoriert und kann später gelöscht werden,
+- normale Kontaktliste wartet nicht auf SIM,
+- SIM-Quellen/-Kontakte werden gecacht und asynchron geladen,
 - parallele Startverbraucher teilen sich eine laufende SIM-Abfrage,
-- die Anrufliste wartet beim ersten Rendern nicht mehr synchron auf SIM,
-- der GitHub-Actions-Workflow wurde von einer fest verdrahteten Einzelpatch-Anwendung auf lexikalische Anwendung von `patches/*.patch` umgestellt.
+- Cache und erste Recents-Auflösung blockieren beim Start nicht auf SIM.
 
-**Wichtig bei GitHub-Web-Uploads:** Die Workflow-Datei liegt im versteckten Ordner `.github/workflows/build.yml` und muss bei diesem Update ebenfalls ersetzt werden.
+**Wichtig bei GitHub-Web-Uploads:** `.github/workflows/build.yml` wurde in v0.2.4 erneut geändert und muss mit hochgeladen/ersetzt werden. Der versteckte `.github`-Ordner darf nicht fehlen.
 
 ## v0.2.2 compile fix
 
 v0.2.1 reached Kotlin compilation and failed at exactly one root error in `SimPhonebook.kt`: the current Commons `Contact.copy(...)` has no named `rawId` parameter.
 
 v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain explicitly included as `new file` entries in the patch. SIM contacts are non-selectable in Phone, so selection behavior does not depend on assigning a synthetic rawId. All other filtering/SIM logic is unchanged. Workflow and signing key are unchanged.
+
+
+## v0.2.4 hotfix
+
+Der Coldstart-Fix ist jetzt direkt in `0001` integriert. Der Workflow verwendet `patches/series`; ein alter `0002` wird ignoriert.

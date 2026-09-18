@@ -78,25 +78,36 @@ index 6e35418..a249f92 100644
              if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
                  dialpadValueChanged("")
 diff --git a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
-index 75f340c..bc0a6af 100644
 --- a/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/activities/MainActivity.kt
-@@ -41,6 +41,7 @@ import org.fossify.phone.fragments.FavoritesFragment
+@@ -41,6 +41,8 @@ import org.fossify.phone.fragments.FavoritesFragment
  import org.fossify.phone.fragments.MyViewPagerFragment
  import org.fossify.phone.fragments.RecentsFragment
  import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
-+import org.fossify.phone.helpers.getSimPhonebookContacts
++import org.fossify.phone.helpers.getCachedSimPhonebookContacts
++import org.fossify.phone.helpers.warmUpSimPhonebookContactsOnce
  import org.fossify.phone.helpers.RecentsHelper
  import org.fossify.phone.helpers.tabsList
  import org.fossify.phone.models.Events
-@@ -622,9 +623,10 @@ class MainActivity : SimpleActivity() {
+@@ -453,6 +455,10 @@ class MainActivity : SimpleActivity() {
+     fun refreshFragments() {
++        warmUpSimPhonebookContactsOnce {
++            cacheContacts()
++            runOnUiThread { getRecentsFragment()?.refreshItems() }
++        }
+         cacheContacts()
+         getContactsFragment()?.refreshItems()
+         getFavoritesFragment()?.refreshItems()
+         getRecentsFragment()?.refreshItems()
+     }
+@@ -622,9 +628,10 @@ class MainActivity : SimpleActivity() {
                  val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
                  if (privateContacts.isNotEmpty()) {
                      contacts.addAll(privateContacts)
 -                    contacts.sort()
                  }
              }
-+            contacts.addAll(getSimPhonebookContacts())
++            contacts.addAll(getCachedSimPhonebookContacts())
 +            contacts.sort()
  
              try {
@@ -344,10 +355,9 @@ index 3a2bd0c..dcd900d 100644
      val isPrivateContact = contact.rawId > FIRST_CONTACT_ID
 diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
 new file mode 100644
-index 0000000..f526c9b
 --- /dev/null
 +++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,141 @@
 +package org.fossify.phone.extensions
 +
 +import android.content.Context
@@ -357,8 +367,9 @@ index 0000000..f526c9b
 +import org.fossify.commons.models.contacts.Contact
 +import org.fossify.commons.models.contacts.ContactSource
 +import org.fossify.phone.R
++import org.fossify.phone.helpers.getCachedSimPhonebookContactSources
 +import org.fossify.phone.helpers.getSimPhonebookContactSources
-+import org.fossify.phone.helpers.getSimPhonebookContacts
++import org.fossify.phone.helpers.getSimPhonebookContactsAsync
 +
 +private const val DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE = "at.bitfire.davdroid.address_book"
 +
@@ -396,7 +407,7 @@ index 0000000..f526c9b
 +    val result = getVisibleContactSources().toMutableList()
 +    val ignored = config.ignoredContactSources
 +
-+    getSimPhonebookContactSources().forEach { source ->
++    getCachedSimPhonebookContactSources().forEach { source ->
 +        if (source.getFullIdentifier() !in ignored && source.name !in result) {
 +            result += source.name
 +        }
@@ -414,23 +425,77 @@ index 0000000..f526c9b
 +    callback: (ArrayList<Contact>) -> Unit,
 +) {
 +    val helper = ContactsHelper(this)
++    val resultsLock = Any()
++    var allowedVisibleNames: HashSet<String>? = null
++    var providerContacts: List<Contact>? = null
++    var simContacts: List<Contact>? = if (includeSim) null else emptyList()
++    var providerResultPublished = false
++    var simResultPublished = !includeSim
++
++    fun publishIfReady() {
++        val snapshot = synchronized(resultsLock) {
++            val allowedNames = allowedVisibleNames
++            val contacts = providerContacts
++            if (allowedNames == null || contacts == null) {
++                null
++            } else {
++                val sim = simContacts
++                when {
++                    !providerResultPublished -> {
++                        providerResultPublished = true
++                        if (sim != null) {
++                            simResultPublished = true
++                        }
++                        Triple(allowedNames, contacts, sim ?: emptyList())
++                    }
++
++                    sim != null && !simResultPublished -> {
++                        simResultPublished = true
++                        if (sim.isEmpty()) null else Triple(allowedNames, contacts, sim)
++                    }
++
++                    else -> null
++                }
++            }
++        } ?: return
++
++        val (allowedNames, contacts, sim) = snapshot
++        val result = ArrayList(contacts.filter { it.source in allowedNames })
++        result.addAll(sim)
++        result.sort()
++        callback(result)
++    }
++
++    // Source lookup and full contact hydration are independent. Starting both immediately avoids
++    // serial provider latency before the first complete non-SIM list can be published.
 +    helper.getContactSources { allSources ->
 +        val visibleNormalSources = getVisibleContactSources().toHashSet()
-+        val allowedVisibleNames = filterAllowedContactSources(allSources)
++        val names = filterAllowedContactSources(allSources)
 +            .asSequence()
 +            .filter { it.name in visibleNormalSources }
 +            .mapTo(HashSet()) { it.name }
++        synchronized(resultsLock) {
++            allowedVisibleNames = names
++        }
++        publishIfReady()
++    }
 +
-+        helper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
-+            val result = ArrayList(contacts.filter { it.source in allowedVisibleNames })
++    helper.getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
++        synchronized(resultsLock) {
++            providerContacts = contacts
++        }
++        publishIfReady()
++    }
 +
-+            if (includeSim) {
-+                val visibleWithSim = getVisibleContactSourcesIncludingSim().toHashSet()
-+                result.addAll(getSimPhonebookContacts().filter { it.source in visibleWithSim })
++    if (includeSim) {
++        getSimPhonebookContactsAsync { contacts ->
++            // getSimPhonebookContactsAsync() populates the source cache before this callback.
++            val visibleWithSim = getVisibleContactSourcesIncludingSim().toHashSet()
++            val visibleSimContacts = contacts.filter { it.source in visibleWithSim }
++            synchronized(resultsLock) {
++                simContacts = visibleSimContacts
 +            }
-+
-+            result.sort()
-+            callback(result)
++            publishIfReady()
 +        }
 +    }
 +}
@@ -579,16 +644,15 @@ index 7ea6cee..1a85f04 100644
                  if (privateContacts.isNotEmpty()) {
                      contacts.addAll(privateContacts)
                  }
-+                contacts.addAll(context.getSimPhonebookContacts())
++                contacts.addAll(context.getCachedSimPhonebookContacts())
  
                  this.queryLimit = queryLimit
                  val recentCalls = if (previousRecents.isNotEmpty()) {
 diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
 new file mode 100644
-index 0000000..a23c148
 --- /dev/null
 +++ b/app/src/main/kotlin/org/fossify/phone/helpers/SimPhonebook.kt
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,303 @@
 +package org.fossify.phone.helpers
 +
 +import android.content.Context
@@ -603,6 +667,18 @@ index 0000000..a23c148
 +
 +const val SIM_PHONEBOOK_SOURCE_TYPE = "android.sim.phonebook"
 +private const val SIM_PHONEBOOK_SOURCE_PREFIX = "__fossify_sim_phonebook__:"
++
++@Volatile
++private var cachedSimPhonebookSources: List<SimPhonebookSource> = emptyList()
++
++@Volatile
++private var cachedSimPhonebookContacts: List<Contact> = emptyList()
++
++private val simPhonebookContactsLoadLock = Any()
++private var isSimPhonebookContactsLoadInProgress = false
++private var hasLoadedSimPhonebookContacts = false
++private var hasStartedSimPhonebookWarmup = false
++private val pendingSimPhonebookContactCallbacks = ArrayList<(ArrayList<Contact>) -> Unit>()
 +
 +data class SimPhonebookSource(
 +    val subscriptionId: Int,
@@ -620,10 +696,11 @@ index 0000000..a23c148
 +
 +fun Context.getSimPhonebookSources(): List<SimPhonebookSource> {
 +    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++        cachedSimPhonebookSources = emptyList()
 +        return emptyList()
 +    }
 +
-+    return runCatching {
++    val sources = runCatching {
 +        val projection = arrayOf(
 +            SimPhonebookContract.ElementaryFiles.SUBSCRIPTION_ID,
 +            SimPhonebookContract.ElementaryFiles.SLOT_INDEX,
@@ -667,6 +744,19 @@ index 0000000..a23c148
 +
 +        result.sortedBy { it.slotIndex }
 +    }.getOrDefault(emptyList())
++
++    cachedSimPhonebookSources = sources
++    return sources
++}
++
++fun Context.getCachedSimPhonebookContactSources(): List<ContactSource> {
++    val sources = cachedSimPhonebookSources
++    val multiple = sources.size > 1
++
++    return sources.map { source ->
++        val publicName = if (multiple) "SIM ${source.slotIndex + 1}" else "SIM"
++        ContactSource(source.sourceName, SIM_PHONEBOOK_SOURCE_TYPE, publicName, count = source.recordCount)
++    }
 +}
 +
 +fun Context.getSimPhonebookContactSources(): List<ContactSource> {
@@ -682,6 +772,8 @@ index 0000000..a23c148
 +fun Context.getSimPhonebookContacts(): ArrayList<Contact> {
 +    val result = ArrayList<Contact>()
 +    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++        cachedSimPhonebookContacts = emptyList()
++        hasLoadedSimPhonebookContacts = true
 +        return result
 +    }
 +
@@ -694,7 +786,67 @@ index 0000000..a23c148
 +        }
 +    }
 +
++    cachedSimPhonebookContacts = ArrayList(result)
++    hasLoadedSimPhonebookContacts = true
 +    return result
++}
++
++fun Context.getCachedSimPhonebookContacts(): ArrayList<Contact> = ArrayList(cachedSimPhonebookContacts)
++
++/**
++ * Starts the process-lifetime startup warm-up at most once. If another consumer already loaded
++ * the SIM phonebook, the callback is served from cache without issuing a second provider query.
++ */
++fun Context.warmUpSimPhonebookContactsOnce(callback: (ArrayList<Contact>) -> Unit) {
++    val cachedResult = synchronized(simPhonebookContactsLoadLock) {
++        if (hasStartedSimPhonebookWarmup) {
++            return
++        }
++
++        hasStartedSimPhonebookWarmup = true
++        if (hasLoadedSimPhonebookContacts) ArrayList(cachedSimPhonebookContacts) else null
++    }
++
++    if (cachedResult != null) {
++        callback(cachedResult)
++    } else {
++        getSimPhonebookContactsAsync(callback)
++    }
++}
++
++/**
++ * Runs the slow SIM provider query off the caller path. Concurrent startup consumers share one
++ * in-flight read so Contacts, cache warm-up and Dialpad do not hammer SimPhonebookContract in
++ * parallel. A later call starts a fresh read, so the process-lifetime cache is not authoritative.
++ */
++fun Context.getSimPhonebookContactsAsync(callback: (ArrayList<Contact>) -> Unit) {
++    val shouldStartLoad = synchronized(simPhonebookContactsLoadLock) {
++        pendingSimPhonebookContactCallbacks += callback
++        if (isSimPhonebookContactsLoadInProgress) {
++            false
++        } else {
++            isSimPhonebookContactsLoadInProgress = true
++            true
++        }
++    }
++
++    if (!shouldStartLoad) {
++        return
++    }
++
++    Thread {
++        val contacts = getSimPhonebookContacts()
++        val callbacks = synchronized(simPhonebookContactsLoadLock) {
++            isSimPhonebookContactsLoadInProgress = false
++            val waiting = ArrayList(pendingSimPhonebookContactCallbacks)
++            pendingSimPhonebookContactCallbacks.clear()
++            waiting
++        }
++
++        callbacks.forEach { pendingCallback ->
++            runCatching { pendingCallback(ArrayList(contacts)) }
++        }
++    }.start()
 +}
 +
 +private fun Context.querySimPhonebookDirectory(source: SimPhonebookSource): List<Contact> = runCatching {

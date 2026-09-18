@@ -1,8 +1,7 @@
-# Patches
+# Patch series
 
-Patches are applied in lexical order to the pinned Fossify Phone 1.11.1 source tree.
+Die aktive Patchreihenfolge steht in `patches/series`. Der GitHub-Actions-Workflow wendet ausschließlich die dort aufgeführten Dateien an.
 
-- `0001-device-davx-sim-filter.patch`: device/DAVx5 allow-list plus direct Android `SimPhonebookContract` support for the Phone UI, Dialpad, source filter and call/name resolution.
-- `0002-nonblocking-sim-cold-start.patch`: ports the Contacts cold-start strategy to Phone. Normal source/contact loading runs in parallel, normal contacts publish without waiting for SIM, SIM source visibility uses a cache, concurrent startup consumers share one asynchronous SIM read, and startup cache/recents paths use cached SIM data instead of synchronously blocking, and Recents is refreshed once after the SIM warm-up completes.
+- `0001-device-davx-sim-filter.patch`: Geräte-/DAVx5-/SIM-Filter plus non-blocking SIM-Coldstart. Normale Kontakte werden ohne Warten auf den SIM-Provider veröffentlicht; SIM wird asynchron geladen, gecacht und bei parallelen Verbrauchern per Single-Flight geteilt. Cache und Recents blockieren beim Start nicht auf SIM.
 
-The regular build keeps package id `org.fossify.phone` and uses the fixed custom signing key in `signing/`.
+Ein alter `0002-nonblocking-sim-cold-start.patch` aus v0.2.3 kann gelöscht werden. Falls er noch im Repository liegt, wird er nicht angewendet, solange er nicht in `patches/series` steht.

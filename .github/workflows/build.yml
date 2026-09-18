@@ -45,15 +45,12 @@ jobs:
           echo "Fossify Phone upstream commit: $ACTUAL"
           test "$ACTUAL" = "${{ steps.upstream.outputs.commit }}"
 
-      - name: Apply patches
+      - name: Apply filter patch
         shell: bash
         run: |
           set -euo pipefail
-          for patch in "$GITHUB_WORKSPACE"/patches/*.patch; do
-            echo "Applying $(basename "$patch")"
-            git -C upstream-phone apply --check "$patch"
-            git -C upstream-phone apply "$patch"
-          done
+          git -C upstream-phone apply --check "$GITHUB_WORKSPACE/patches/0001-device-davx-sim-filter.patch"
+          git -C upstream-phone apply "$GITHUB_WORKSPACE/patches/0001-device-davx-sim-filter.patch"
           git -C upstream-phone diff --check
 
       - name: Configure fixed release signing key

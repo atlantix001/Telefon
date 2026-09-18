@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.2
+# Fossify Phone filtered — v0.2.3
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -49,9 +49,20 @@ Auf dem verifizierten Pixel-Testgerät liefert `content://com.android.simphonebo
 
 Phone liest SIM-Kontakte nur zur Anzeige/Anrufauswahl; es bearbeitet oder löscht sie nicht. Dafür ist die gefilterte Fossify-Contacts-App zuständig.
 
-Synthetische SIM-Kontakte erhalten eindeutige negative `id` und `rawId`, weil Fossify Phone `rawId` als Auswahl-Key benutzt. Langdruck-/CAB-Aktionen auf SIM-Kontakten sind deaktiviert, damit Phone keine normalen ContactsProvider-Lösch-/Bearbeitungsaktionen auf SIM-Datensätze anwendet.
+Synthetische SIM-Kontakte erhalten eine eindeutige negative `id`. Sie werden in Phone nicht als auswählbare Langdruck-/CAB-Einträge behandelt, damit keine normalen ContactsProvider-Lösch-/Bearbeitungsaktionen auf SIM-Datensätze angewendet werden. Ein synthetischer `rawId` wird bewusst nicht gesetzt, da die aktuelle Commons-`Contact.copy(...)`-Signatur diesen Parameter nicht anbietet.
 
 Da ein SIM-Datensatz keine normale ContactsProvider-Detail-URI besitzt, fällt ein Detail-Aufruf für einen SIM-Kontakt in Phone auf die normale Anrufaktion zurück.
+
+## Kaltstart / nicht blockierende SIM-Abfrage
+
+Der Kontakte-Tab wartet beim Kaltstart nicht mehr auf den langsamen `SimPhonebookContract`-Provider:
+
+1. ContactsProvider-Quellen und normale Kontakte werden unabhängig gestartet,
+2. sobald beide normalen Ergebnisse vorliegen, werden Geräte-/DAVx5-Kontakte sofort veröffentlicht,
+3. die SIM-Abfrage läuft separat im Hintergrund,
+4. vorhandene sichtbare SIM-Kontakte werden anschließend mit einem zweiten Refresh ergänzt.
+
+Die SIM-Quellen werden nach der Hintergrundabfrage im Speicher gecacht. `MainActivity.cacheContacts()` verwendet ebenfalls nur den bereits vorhandenen SIM-Kontaktcache und löst dadurch keine synchrone SIM-Abfrage im UI-Callback mehr aus. Leere SIM-Ergebnisse erzeugen keinen zweiten identischen Listen-Refresh.
 
 ## Caller-ID / Anrufauflösung
 
@@ -73,9 +84,11 @@ GitHub Actions Workflow:
 
 `.github/workflows/build.yml`
 
+Die Workflow-Patches werden in lexikalischer Reihenfolge aus `patches/*.patch` angewendet.
+
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.2-1.11.1.apk`
+`Fossify-Phone-filter-0.2.3-1.11.1.apk`
 
 ## Signing freeze
 
@@ -87,11 +100,20 @@ Dieser Key wurde als initialer fester Key für die Phone-Filter-Linie erzeugt un
 
 Workflow SHA-256:
 
-`1d5acf6b344098e93d05375ff6626d317a409fd96907d3cd66c281d20ee4f4bb`
+`d0a5480869b97fc295d50fb06e9a3a57100a15b6a3dcf2369e0a790a2a1d2e79`
 
 ## Lokale Prüfung
 
-Der Patch wurde gegen den bereitgestellten Source-Snapshot von Fossify Phone 1.11.1 statisch mit `git apply --check` und `git diff --check` geprüft. In dieser Umgebung wurde kein vollständiger Android-Build behauptet; der Compile-/APK-Test erfolgt über GitHub Actions.
+`0002-nonblocking-sim-cold-start.patch` wurde statisch gegen den exakten Post-`0001`-Stand der von `0001` neu angelegten Custom-Dateien sowie gegen den dort erzeugten `MainActivity`-Kontext mit `git apply --check` und `git diff --check` geprüft. Ein vollständiger Android-Build wird weiterhin von GitHub Actions durchgeführt.
+
+## v0.2.3 non-blocking SIM cold start
+
+- neuer `0002-nonblocking-sim-cold-start.patch`,
+- normaler Kontakte-/Dialpad-Load wird nicht mehr von der SIM-Abfrage gegated,
+- SIM-Discovery und SIM-Kontakte laufen separat im Hintergrund und werden bei Bedarf nachgereicht,
+- SIM-Quellen und geladene SIM-Kontakte werden im Speicher gecacht,
+- `MainActivity.cacheContacts()` liest beim UI-Callback nur den SIM-Cache statt den SIM-Provider synchron erneut zu öffnen,
+- Build-Workflow wendet jetzt alle `patches/*.patch` in lexikalischer Reihenfolge an.
 
 ## v0.2.2 compile fix
 

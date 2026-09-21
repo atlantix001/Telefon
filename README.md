@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.6
+# Fossify Phone filtered — v0.2.7
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -88,7 +88,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.6-1.11.1.apk`
+`Fossify-Phone-filter-0.2.7-1.11.1.apk`
 
 ## Signing freeze
 
@@ -107,11 +107,13 @@ Workflow SHA-256:
 Der v0.2.4-Hotfix vermeidet die fehleranfällige Patch-auf-Patch-Kette: Der Coldstart-Fix ist direkt in `patches/0001-device-davx-sim-filter.patch` integriert. Die Unified-Diff-Struktur wurde vollständig geprüft (`git apply --numstat`), alle Hunk-Zähler stimmen, und die neuen MainActivity-Kontexte entsprechen dem gepinnten 1.11.1-Upstream. Der vollständige Kotlin-/APK-Compile-Test erfolgt über GitHub Actions.
 
 
-## v0.2.6 provider-neutrale Adressbücher + Google-Syncstatus
+## v0.2.7 konkrete Konto-Aktivierung statt Account-Type-Fallback
 
-v0.2.6 lockert den in v0.2.5 noch zu strengen Capability-Filter für CardDAV-Clients. Ein echtes Kontaktadressbuch muss weder `SyncAdapter.isUserVisible()` noch `supportsUploading()` melden. Stattdessen genügt ein Contacts-SyncAdapter für den Account-Type; zusätzlich gibt es einen provider-neutralen Fallback über `ContentResolver.getIsSyncable()` für das konkrete Konto. Bekannte Messenger-/Kontaktspiegel-Typen bleiben explizit ausgeschlossen.
+v0.2.7 behebt die verbliebenen False Positives aus v0.2.6. Fossify Commons übernimmt Android-Konten bereits bei `ContentResolver.getIsSyncable(account, ContactsContract.AUTHORITY) >= 0`; da `0` ausdrücklich *nicht synchronisierbar* bedeutet, konnten reine Kalender-/CalDAV-Konten trotzdem als Kontaktquelle erscheinen.
 
-Google (`com.google`) ist eine gezielte Sonderregel: Das Google-Telefonbuch erscheint nur, wenn `ContentResolver.getSyncAutomatically(account, ContactsContract.AUTHORITY)` für dieses Google-Konto aktiv ist. Der globale Master-Sync-Schalter wird absichtlich nicht berücksichtigt. Es gibt keinerlei feste CardDAV-/DAVx5-Allowlist.
+Der Custom-Filter entscheidet nun pro konkretem Konto: Eine Account-Quelle erscheint nur, wenn Kontakte für genau dieses Konto `getIsSyncable(...) > 0` sind und `getSyncAutomatically(...)` aktiviert ist. Dadurch verschwinden insbesondere deaktivierte Google-Kontakte und kombinierte Anbieter-Konten, bei denen nur Kalender-Sync eingerichtet ist. Meldet ein Provider dem Android-Syncframework einen unbekannten Zustand (`< 0`), wird er nur dann als Fallback akzeptiert, wenn exakt dieser Account-Name/-Typ tatsächlich in `ContactsContract.Settings`, `Groups` oder `RawContacts` vorkommt.
+
+Es gibt weiterhin keine feste CardDAV-/DAVx5-Allowlist. Der globale Android-Master-Sync-Schalter wird bewusst nicht als Filterkriterium verwendet.
 
 ## v0.2.4 coldstart hotfix
 

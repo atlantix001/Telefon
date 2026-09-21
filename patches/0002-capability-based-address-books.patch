@@ -1,13 +1,14 @@
 diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
-index 2252c80..4427a76 100644
+index 2252c80..7c6a521 100644
 --- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
-@@ -1,40 +1,92 @@
+@@ -1,40 +1,115 @@
  package org.fossify.phone.extensions
  
 +import android.accounts.Account
 +import android.content.ContentResolver
  import android.content.Context
++import android.net.Uri
 +import android.provider.ContactsContract
  import org.fossify.commons.extensions.getVisibleContactSources
  import org.fossify.commons.helpers.ContactsHelper
@@ -20,8 +21,6 @@ index 2252c80..4427a76 100644
  import org.fossify.phone.helpers.getSimPhonebookContactsAsync
  
 -private const val DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE = "at.bitfire.davdroid.address_book"
-+private const val GOOGLE_ACCOUNT_TYPE = "com.google"
-+
 +private val NON_ADDRESS_BOOK_ACCOUNT_TYPES = setOf(
 +    "com.whatsapp",
 +    "com.whatsapp.w4b",
@@ -33,56 +32,80 @@ index 2252c80..4427a76 100644
  
  /**
 - * Hard allow-list used by the custom Phone build.
-+ * Returns whether an account-backed source behaves like a real Android contact address book.
++ * Returns whether ContactsProvider already contains a concrete source with this account name/type.
   *
 - * The regular Android ContactsProvider remains untouched. This app only displays real local
 - * device storage and DAVx5 address-book accounts. Direct SIM phonebook sources are appended
 - * separately because they live outside ContactsProvider.
-+ * Do not require SyncAdapter.isUserVisible() or supportsUploading(): legitimate CardDAV providers
-+ * do not report those flags consistently. We instead accept a ContactsContract SyncAdapter, or a
-+ * concrete account that Android marks syncable for the contacts authority. Known messenger-only
-+ * mirrors stay excluded explicitly.
++ * This is only a fallback for providers that do not participate in Android's sync framework. It is
++ * intentionally scoped to the concrete source, so merely installing an app/account type that is
++ * capable of CardDAV is not enough to make an unrelated account appear as an address book.
 + */
-+private fun isContactAddressBookAccount(source: ContactSource): Boolean {
++private fun Context.hasContactsProviderSource(source: ContactSource): Boolean {
++    val selection = "${ContactsContract.RawContacts.ACCOUNT_NAME} = ? AND ${ContactsContract.RawContacts.ACCOUNT_TYPE} = ?"
++    val selectionArgs = arrayOf(source.name, source.type)
++
++    fun hasRow(uri: Uri): Boolean = runCatching {
++        contentResolver.query(
++            uri,
++            arrayOf(ContactsContract.RawContacts.ACCOUNT_NAME),
++            selection,
++            selectionArgs,
++            null,
++        )?.use { cursor -> cursor.moveToFirst() } ?: false
++    }.getOrDefault(false)
++
++    return hasRow(ContactsContract.Settings.CONTENT_URI) ||
++        hasRow(ContactsContract.Groups.CONTENT_URI) ||
++        hasRow(ContactsContract.RawContacts.CONTENT_URI)
++}
++
++/**
++ * Decides per concrete Android account, not merely per account type.
++ *
++ * Fossify Commons currently accepts AccountManager entries with getIsSyncable() >= 0. That also
++ * includes 0 (not syncable), which can surface calendar-only or otherwise unrelated accounts if
++ * their provider happens to support contacts in principle. Here an account-backed source is shown
++ * only while contacts sync for that exact account is both syncable and enabled.
++ *
++ * A provider that does not use Android's sync framework can still qualify through an actual row in
++ * ContactsProvider. The fallback is used only when Android reports an unknown syncability state;
++ * an explicitly disabled/not-syncable account never falls through to it.
++ */
++private fun Context.isContactAddressBookAccount(source: ContactSource): Boolean {
 +    if (source.name.isBlank() || source.type.isBlank() || source.type in NON_ADDRESS_BOOK_ACCOUNT_TYPES) {
 +        return false
 +    }
 +
 +    val account = Account(source.name, source.type)
++    val syncable = runCatching {
++        ContentResolver.getIsSyncable(account, ContactsContract.AUTHORITY)
++    }.getOrDefault(-1)
++    val syncAutomatically = runCatching {
++        ContentResolver.getSyncAutomatically(account, ContactsContract.AUTHORITY)
++    }.getOrDefault(false)
 +
-+    // Google is useful as a filter source only while Contacts sync is enabled for this account.
-+    // Intentionally ignore the global master-sync switch: disabling all background sync temporarily
-+    // should not make a configured Google address book disappear from Fossify.
-+    if (source.type == GOOGLE_ACCOUNT_TYPE) {
-+        val contactsSyncEnabled = runCatching {
-+            ContentResolver.getSyncAutomatically(account, ContactsContract.AUTHORITY)
-+        }.getOrDefault(false)
-+        if (!contactsSyncEnabled) {
-+            return false
-+        }
-+    }
-+
-+    val hasContactsSyncAdapter = ContentResolver.getSyncAdapterTypes().any { adapter ->
-+        adapter.authority == ContactsContract.AUTHORITY && adapter.accountType == source.type
-+    }
-+    if (hasContactsSyncAdapter) {
++    if (syncable > 0 && syncAutomatically) {
 +        return true
 +    }
 +
-+    // Fallback for CardDAV/contact providers that populate ContactsProvider but do not expose the
-+    // usual SyncAdapter metadata. This remains provider-neutral and uses the concrete account.
-+    return runCatching {
-+        ContentResolver.getIsSyncable(account, ContactsContract.AUTHORITY) > 0
-+    }.getOrDefault(false)
++    // 0 means explicitly not syncable. A positive value with auto-sync off means contacts sync is
++    // configured but disabled. In both cases this source should stay out of the filter list.
++    if (syncable >= 0) {
++        return false
++    }
++
++    // Unknown sync state: allow only a source that demonstrably exists in ContactsProvider.
++    return hasContactsProviderSource(source)
 +}
 +
 +/**
 + * Keeps Phone focused on actual contact address books.
 + *
-+ * Local phone storage is kept explicitly. Account-backed address books are detected through
-+ * ContactsContract capability rather than a provider/package allow-list. Google is shown only when
-+ * per-account Contacts sync is enabled. Fossify-private storage and known messenger-only contact
-+ * mirrors stay hidden. Direct SIM phonebooks are appended separately.
++ * Local phone storage is kept explicitly. Account-backed sources are evaluated per concrete
++ * account, so an enabled CardDAV address book is shown while a calendar-only account of the same
++ * provider is not. Fossify-private storage and known messenger mirrors stay hidden. Direct SIM
++ * phonebooks are appended separately.
   */
  fun Context.isAllowedContactSource(source: ContactSource): Boolean {
      if (source.type == SMT_PRIVATE || source.name == SMT_PRIVATE) {

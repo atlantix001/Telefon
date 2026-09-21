@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.5
+# Fossify Phone filtered — v0.2.6
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -17,7 +17,7 @@ No build uses `main`.
 Die Kontakt-Oberflächen dieser Custom-Version zeigen ausschließlich:
 
 - echten lokalen Gerätespeicher,
-- reguläre Android-Kontaktadressbücher, deren Account-Type einen sichtbaren und beschreibbaren `ContactsContract`-SyncAdapter bereitstellt (CardDAV/DAVx5 und andere echte Kontaktanbieter),
+- reguläre Android-Kontaktadressbücher, die provider-neutral über `ContactsContract`-SyncAdapter/Syncability erkannt werden; kein CardDAV-Anbieter ist fest verdrahtet,
 - echte SIM-ADN-Kontakte über Android `SimPhonebookContract` (API 31+).
 
 Ausgeblendet werden innerhalb von Fossify Phone:
@@ -25,7 +25,7 @@ Ausgeblendet werden innerhalb von Fossify Phone:
 - Fossify privater Kontaktspeicher (`SMT_PRIVATE`),
 - technische bzw. nur lesbare Kontaktquellen,
 - Konten ohne reguläre Kontakte-Sync-Funktion,
-- Messenger und sonstige Android-Konten, sofern sie kein sichtbares/beschreibbares Kontaktadressbuch bereitstellen.
+- bekannte Messenger-/Kontaktspiegel-Konten; Google wird zusätzlich ausgeblendet, wenn die Kontakte-Synchronisation für das konkrete Google-Konto deaktiviert ist.
 
 Es wird nichts gelöscht oder aus dem Android ContactsProvider entfernt.
 
@@ -88,7 +88,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.5-1.11.1.apk`
+`Fossify-Phone-filter-0.2.6-1.11.1.apk`
 
 ## Signing freeze
 
@@ -107,9 +107,11 @@ Workflow SHA-256:
 Der v0.2.4-Hotfix vermeidet die fehleranfällige Patch-auf-Patch-Kette: Der Coldstart-Fix ist direkt in `patches/0001-device-davx-sim-filter.patch` integriert. Die Unified-Diff-Struktur wurde vollständig geprüft (`git apply --numstat`), alle Hunk-Zähler stimmen, und die neuen MainActivity-Kontexte entsprechen dem gepinnten 1.11.1-Upstream. Der vollständige Kotlin-/APK-Compile-Test erfolgt über GitHub Actions.
 
 
-## v0.2.5 Adressbuch-Capability-Filter
+## v0.2.6 provider-neutrale Adressbücher + Google-Syncstatus
 
-v0.2.5 entfernt die DAVx5-spezifische Hardcodierung. Account-basierte Quellen werden nun anhand der Android-Kontaktfähigkeit zugelassen: Für ihren Account-Type muss ein sichtbarer und beschreibbarer SyncAdapter für `ContactsContract.AUTHORITY` registriert sein. Dadurch erscheinen neu angelegte CardDAV-Adressbücher sowie andere echte Telefonbücher dynamisch, während technische, nur lesbare und Nicht-Telefonbuch-Konten ausgeblendet bleiben. Die bisherige UI-Label-Heuristik über `phone_storage` entfällt.
+v0.2.6 lockert den in v0.2.5 noch zu strengen Capability-Filter für CardDAV-Clients. Ein echtes Kontaktadressbuch muss weder `SyncAdapter.isUserVisible()` noch `supportsUploading()` melden. Stattdessen genügt ein Contacts-SyncAdapter für den Account-Type; zusätzlich gibt es einen provider-neutralen Fallback über `ContentResolver.getIsSyncable()` für das konkrete Konto. Bekannte Messenger-/Kontaktspiegel-Typen bleiben explizit ausgeschlossen.
+
+Google (`com.google`) ist eine gezielte Sonderregel: Das Google-Telefonbuch erscheint nur, wenn `ContentResolver.getSyncAutomatically(account, ContactsContract.AUTHORITY)` für dieses Google-Konto aktiv ist. Der globale Master-Sync-Schalter wird absichtlich nicht berücksichtigt. Es gibt keinerlei feste CardDAV-/DAVx5-Allowlist.
 
 ## v0.2.4 coldstart hotfix
 

@@ -1,0 +1,69 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+index 2252c80..a2cf99b 100644
+--- a/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/extensions/ContactSourceFilter.kt
+@@ -1,40 +1,52 @@
+ package org.fossify.phone.extensions
+ 
++import android.content.ContentResolver
+ import android.content.Context
++import android.provider.ContactsContract
+ import org.fossify.commons.extensions.getVisibleContactSources
+ import org.fossify.commons.helpers.ContactsHelper
+ import org.fossify.commons.helpers.SMT_PRIVATE
+ import org.fossify.commons.models.contacts.Contact
+ import org.fossify.commons.models.contacts.ContactSource
+-import org.fossify.phone.R
+ import org.fossify.phone.helpers.getCachedSimPhonebookContactSources
+ import org.fossify.phone.helpers.getSimPhonebookContactSources
+ import org.fossify.phone.helpers.getSimPhonebookContactsAsync
+ 
+-private const val DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE = "at.bitfire.davdroid.address_book"
++/**
++ * Returns Android account types that expose a normal, user-visible and writable contacts sync
++ * adapter. The filter therefore follows ContactsContract capabilities instead of a hardcoded
++ * provider/account-type allow-list.
++ */
++private fun contactAddressBookAccountTypes(): Set<String> =
++    ContentResolver.getSyncAdapterTypes()
++        .asSequence()
++        .filter { it.authority == ContactsContract.AUTHORITY }
++        .filter { it.isUserVisible() }
++        .filter { it.supportsUploading() }
++        .mapTo(HashSet()) { it.accountType }
+ 
+ /**
+- * Hard allow-list used by the custom Phone build.
++ * Keeps Phone focused on actual contact address books.
+  *
+- * The regular Android ContactsProvider remains untouched. This app only displays real local
+- * device storage and DAVx5 address-book accounts. Direct SIM phonebook sources are appended
+- * separately because they live outside ContactsProvider.
++ * Local writable phone storage is kept explicitly. Account-backed sources are accepted only when
++ * Android exposes a user-visible, upload-capable contacts SyncAdapter for their account type.
++ * Fossify-private storage and technical/read-only/non-contact accounts stay hidden. Direct SIM
++ * phonebook sources are appended separately because they live outside ContactsProvider.
+  */
+ fun Context.isAllowedContactSource(source: ContactSource): Boolean {
+     if (source.type == SMT_PRIVATE || source.name == SMT_PRIVATE) {
+         return false
+     }
+ 
+-    val isDavx5AddressBook = source.type == DAVX5_ADDRESS_BOOK_ACCOUNT_TYPE
+     val isAccountlessDeviceStorage = source.name.isBlank() && source.type.isBlank()
+     val isFossifyPhoneStorage = source.type.equals("PHONE", ignoreCase = true) &&
+         source.name.equals("Phone", ignoreCase = true)
+-    val isLocalizedDeviceStorage = source.publicName == getString(R.string.phone_storage)
+ 
+-    return isDavx5AddressBook ||
+-        isAccountlessDeviceStorage ||
+-        isFossifyPhoneStorage ||
+-        isLocalizedDeviceStorage
++    if (isAccountlessDeviceStorage || isFossifyPhoneStorage) {
++        return true
++    }
++
++    return source.name.isNotBlank() && source.type in contactAddressBookAccountTypes()
+ }
+ 
+ fun Context.filterAllowedContactSources(sources: List<ContactSource>): List<ContactSource> =

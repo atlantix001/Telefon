@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.4
+# Fossify Phone filtered — v0.2.5
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -17,16 +17,15 @@ No build uses `main`.
 Die Kontakt-Oberflächen dieser Custom-Version zeigen ausschließlich:
 
 - echten lokalen Gerätespeicher,
-- DAVx5-Adressbücher mit Account-Type `at.bitfire.davdroid.address_book`,
+- reguläre Android-Kontaktadressbücher, deren Account-Type einen sichtbaren und beschreibbaren `ContactsContract`-SyncAdapter bereitstellt (CardDAV/DAVx5 und andere echte Kontaktanbieter),
 - echte SIM-ADN-Kontakte über Android `SimPhonebookContract` (API 31+).
 
 Ausgeblendet werden innerhalb von Fossify Phone:
 
 - Fossify privater Kontaktspeicher (`SMT_PRIVATE`),
-- normales DAVx5-Hauptkonto,
-- Google,
-- Samsung,
-- Messenger und sonstige Android-Konten.
+- technische bzw. nur lesbare Kontaktquellen,
+- Konten ohne reguläre Kontakte-Sync-Funktion,
+- Messenger und sonstige Android-Konten, sofern sie kein sichtbares/beschreibbares Kontaktadressbuch bereitstellen.
 
 Es wird nichts gelöscht oder aus dem Android ContactsProvider entfernt.
 
@@ -51,7 +50,7 @@ Auf dem verifizierten Pixel-Testgerät liefert `content://com.android.simphonebo
 Der in Fossify Contacts verifizierte Coldstart-Ansatz wurde auf die Phone-spezifischen Ladepfade übertragen. Die normale ContactsProvider-Liste wird nicht mehr von `SimPhonebookContract` blockiert:
 
 1. normale Quellenabfrage und normale Kontaktabfrage starten parallel,
-2. sobald beide normalen Ergebnisse vorliegen, wird die vollständige Geräte-/DAVx5-Liste sofort veröffentlicht,
+2. sobald beide normalen Ergebnisse vorliegen, wird die vollständige Geräte-/Adressbuch-Liste sofort veröffentlicht,
 3. SIM-Quellen werden für UI-/Filterpfade aus einem In-Memory-Cache gelesen, statt dort erneut synchron entdeckt zu werden,
 4. die langsame SIM-Abfrage läuft separat im Hintergrund und ergänzt die sichtbare Liste nur dann mit einem zweiten Ergebnis, wenn SIM-Kontakte vorhanden sind,
 5. mehrere gleichzeitige Phone-Startpfade teilen sich eine laufende SIM-Abfrage (Single-Flight), damit der SIM-Provider beim Kaltstart nicht parallel mehrfach abgefragt wird,
@@ -89,7 +88,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.4-1.11.1.apk`
+`Fossify-Phone-filter-0.2.5-1.11.1.apk`
 
 ## Signing freeze
 
@@ -106,6 +105,11 @@ Workflow SHA-256:
 ## Lokale Prüfung
 
 Der v0.2.4-Hotfix vermeidet die fehleranfällige Patch-auf-Patch-Kette: Der Coldstart-Fix ist direkt in `patches/0001-device-davx-sim-filter.patch` integriert. Die Unified-Diff-Struktur wurde vollständig geprüft (`git apply --numstat`), alle Hunk-Zähler stimmen, und die neuen MainActivity-Kontexte entsprechen dem gepinnten 1.11.1-Upstream. Der vollständige Kotlin-/APK-Compile-Test erfolgt über GitHub Actions.
+
+
+## v0.2.5 Adressbuch-Capability-Filter
+
+v0.2.5 entfernt die DAVx5-spezifische Hardcodierung. Account-basierte Quellen werden nun anhand der Android-Kontaktfähigkeit zugelassen: Für ihren Account-Type muss ein sichtbarer und beschreibbarer SyncAdapter für `ContactsContract.AUTHORITY` registriert sein. Dadurch erscheinen neu angelegte CardDAV-Adressbücher sowie andere echte Telefonbücher dynamisch, während technische, nur lesbare und Nicht-Telefonbuch-Konten ausgeblendet bleiben. Die bisherige UI-Label-Heuristik über `phone_storage` entfällt.
 
 ## v0.2.4 coldstart hotfix
 

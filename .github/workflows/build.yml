@@ -45,13 +45,22 @@ jobs:
           echo "Fossify Phone upstream commit: $ACTUAL"
           test "$ACTUAL" = "${{ steps.upstream.outputs.commit }}"
 
-      - name: Apply filter patches
+      - name: Apply patch series
         shell: bash
         run: |
           set -euo pipefail
           test -f patches/series
           while IFS= read -r entry || [[ -n "$entry" ]]; do
             [[ -z "$entry" || "$entry" == \#* ]] && continue
+
+            if [[ "$entry" == "@python "* ]]; then
+              script="patches/${entry#@python }"
+              test -f "$script"
+              echo "Applying structure-aware patch $script"
+              python3 "$GITHUB_WORKSPACE/$script" "$GITHUB_WORKSPACE/upstream-phone"
+              continue
+            fi
+
             patch="patches/$entry"
             test -f "$patch"
             echo "Applying $patch"

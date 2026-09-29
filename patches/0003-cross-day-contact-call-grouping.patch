@@ -1,8 +1,7 @@
 diff --git a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt b/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
 --- a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
-@@ -3,6 +3,19 @@
-         callback()
+@@ -426,4 +426,17 @@
          selectedKeys.remove(callId)
      }
 +
@@ -20,9 +19,7 @@ diff --git a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.k
 +
      private inner class RecentCallViewHolder(val binding: ItemRecentCallBinding) : ViewHolder(binding.root) {
          fun bind(call: RecentCall) = bindView(
-             item = call,
-@@ -124,13 +137,22 @@
-                         }
+@@ -547,11 +560,20 @@
                      }
                  }
 -                val drawable = when (call.type) {
@@ -49,46 +46,40 @@ diff --git a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.k
 -                itemRecentsType.setImageDrawable(drawable)
                  overflowMenuIcon.beVisibleIf(showOverflowMenu)
                  overflowMenuIcon.drawable.apply {
-                     mutate()
-@@ -189,7 +211,7 @@ class RecentCallsDiffCallback : DiffUtil.ItemCallback<CallLogItem>() {
-                         oldItem.specificNumber == newItem.specificNumber &&
+@@ -612,5 +634,5 @@
                          oldItem.specificType == newItem.specificType &&
                          oldItem.isUnknownNumber == newItem.isUnknownNumber &&
 -                        oldItem.groupedCalls?.size == newItem.groupedCalls?.size
 +                        oldItem.groupedCalls?.map { it.id to it.type } == newItem.groupedCalls?.map { it.id to it.type }
              }
              else -> false
-         }
 diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
 --- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
 +++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
-@@ -29,6 +29,7 @@ class RecentsHelper(private val context: Context) {
-                     val previousRecentCalls = previousRecents
+@@ -45,4 +45,5 @@
                          .flatMap { it.groupedCalls ?: listOf(it) }
                          .map { it.copy(groupedCalls = null) }
 +                        .sortedByDescending { it.startTS }
                      val newerRecents = getRecents(
                          contacts = contacts,
-                         selection = "${Calls.DATE} > ?",
-@@ -59,41 +60,30 @@ class RecentsHelper(private val context: Context) {
-     ) {
+@@ -75,5 +76,5 @@
          getRecentCalls(previousRecents, queryLimit) { recentCalls ->
              callback(
 -                groupSubsequentCalls(calls = recentCalls)
 +                groupCallsByContact(calls = recentCalls)
              )
          }
-     }
+@@ -81,5 +82,4 @@
      private fun shouldGroupCalls(callA: RecentCall, callB: RecentCall): Boolean {
--        val differentSim = callA.simID != callB.simID
+         val differentSim = callA.simID != callB.simID
 -        val differentDay = callA.dayCode != callB.dayCode
--        val namesAreBothRealAndDifferent =
--            callA.name != callB.name &&
--                    callA.name != callA.phoneNumber &&
--                    callB.name != callB.phoneNumber
-+        if (callA.simID != callB.simID) return false
+         val namesAreBothRealAndDifferent =
+             callA.name != callB.name &&
+@@ -87,27 +87,22 @@
+                     callB.name != callB.phoneNumber
  
 -        if (differentSim || differentDay || namesAreBothRealAndDifferent) return false
++        if (differentSim || namesAreBothRealAndDifferent) return false
          @Suppress("DEPRECATION")
          return PhoneNumberUtils.compare(callA.phoneNumber, callB.phoneNumber)
      }
@@ -122,12 +113,10 @@ diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/ap
 -        result.add(currentCall)
          return result
      }
-     @SuppressLint("NewApi")
 diff --git a/app/src/main/res/layout/item_recent_call.xml b/app/src/main/res/layout/item_recent_call.xml
 --- a/app/src/main/res/layout/item_recent_call.xml
 +++ b/app/src/main/res/layout/item_recent_call.xml
-@@ -38,6 +38,32 @@
-         app:layout_constraintStart_toEndOf="@+id/item_recents_sim_image"
+@@ -82,4 +82,30 @@
          app:layout_constraintTop_toTopOf="@id/item_recents_date_time"
          tools:tint="@color/color_missed_call" />
 +    <ImageView
@@ -158,13 +147,10 @@ diff --git a/app/src/main/res/layout/item_recent_call.xml b/app/src/main/res/lay
 +        tools:visibility="visible" />
      <TextView
          android:id="@+id/item_recents_date_time"
-         android:layout_width="wrap_content"
-@@ -46,7 +72,7 @@
-         android:maxLines="1"
+@@ -90,5 +116,5 @@
          android:textSize="@dimen/normal_text_size"
          app:layout_constraintBottom_toBottomOf="parent"
 -        app:layout_constraintStart_toEndOf="@+id/item_recents_type"
 +        app:layout_constraintStart_toEndOf="@+id/item_recents_type_tertiary"
          app:layout_constraintTop_toBottomOf="@id/item_recents_name"
          tools:text="4 July, 04:37 PM"
-         tools:textColor="@color/color_missed_call" />

@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.7
+# Fossify Phone filtered — v0.2.8
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -88,7 +88,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK:
 
-`Fossify-Phone-filter-0.2.7-1.11.1.apk`
+`Fossify-Phone-filter-0.2.8-1.11.1.apk`
 
 ## Signing freeze
 
@@ -106,6 +106,14 @@ Workflow SHA-256:
 
 Der v0.2.4-Hotfix vermeidet die fehleranfällige Patch-auf-Patch-Kette: Der Coldstart-Fix ist direkt in `patches/0001-device-davx-sim-filter.patch` integriert. Die Unified-Diff-Struktur wurde vollständig geprüft (`git apply --numstat`), alle Hunk-Zähler stimmen, und die neuen MainActivity-Kontexte entsprechen dem gepinnten 1.11.1-Upstream. Der vollständige Kotlin-/APK-Compile-Test erfolgt über GitHub Actions.
 
+
+## v0.2.8 durchgehende Anruflisten-Gruppierung
+
+Die bestehende Option zum Gruppieren von Anrufen fasst in dieser Custom-Version bei Aktivierung nicht mehr nur direkt aufeinanderfolgende Anrufe desselben Tages zusammen. Stattdessen wird dieselbe Rufnummer über die gesamte geladene Anrufhistorie gruppiert, auch wenn andere Kontakte oder Tagesgrenzen dazwischen liegen. Die bisherige Trennung nach verwendeter SIM bleibt unverändert.
+
+Der jeweils neueste Anruf bildet den sichtbaren Gruppeneintrag und bestimmt Zeitstempel/Position in der Liste. Die Anzahl in Klammern sowie die Detailansicht bleiben erhalten. Enthält eine Gruppe unterschiedliche Anrufarten, zeigt der Listeneintrag die vorhandenen farbigen Symbole für eingehend, ausgehend und verpasst nebeneinander (je Statusart höchstens einmal). Beim inkrementellen Nachladen werden zuvor gruppierte Einzelanrufe vor der Grenzwertabfrage wieder global nach Zeit sortiert, damit die neue tageübergreifende Gruppierung keine falschen Ladegrenzen erzeugt.
+
+Die Filter-, SIM-Kontakt- und non-blocking Coldstart-Patches `0001` und `0002` bleiben unverändert; die Änderung liegt separat in `0003-cross-day-contact-call-grouping.patch`.
 
 ## v0.2.7 konkrete Konto-Aktivierung statt Account-Type-Fallback
 

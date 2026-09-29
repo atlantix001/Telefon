@@ -1,0 +1,170 @@
+diff --git a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt b/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
+--- a/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
++++ b/app/src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt
+@@ -3,6 +3,19 @@
+         callback()
+         selectedKeys.remove(callId)
+     }
++
++    private fun normalizeCallType(type: Int) = when (type) {
++        Calls.OUTGOING_TYPE -> Calls.OUTGOING_TYPE
++        Calls.MISSED_TYPE -> Calls.MISSED_TYPE
++        else -> Calls.INCOMING_TYPE
++    }
++
++    private fun getCallTypeDrawable(type: Int) = when (normalizeCallType(type)) {
++        Calls.OUTGOING_TYPE -> outgoingCallIcon
++        Calls.MISSED_TYPE -> incomingMissedCallIcon
++        else -> incomingCallIcon
++    }
++
+     private inner class RecentCallViewHolder(val binding: ItemRecentCallBinding) : ViewHolder(binding.root) {
+         fun bind(call: RecentCall) = bindView(
+             item = call,
+@@ -124,13 +137,22 @@
+                         }
+                     }
+                 }
+-                val drawable = when (call.type) {
+-                    Calls.OUTGOING_TYPE -> outgoingCallIcon
+-                    Calls.MISSED_TYPE -> incomingMissedCallIcon
+-                    else -> incomingCallIcon
++                val callTypes = (call.groupedCalls ?: listOf(call))
++                    .map { normalizeCallType(it.type) }
++                    .distinct()
++                    .take(3)
++                val callTypeViews = listOf(
++                    itemRecentsType,
++                    itemRecentsTypeSecondary,
++                    itemRecentsTypeTertiary,
++                )
++                callTypeViews.forEachIndexed { index, imageView ->
++                    val type = callTypes.getOrNull(index)
++                    imageView.beVisibleIf(type != null)
++                    if (type != null) {
++                        imageView.setImageDrawable(getCallTypeDrawable(type))
++                    }
+                 }
+-
+-                itemRecentsType.setImageDrawable(drawable)
+                 overflowMenuIcon.beVisibleIf(showOverflowMenu)
+                 overflowMenuIcon.drawable.apply {
+                     mutate()
+@@ -189,7 +211,7 @@ class RecentCallsDiffCallback : DiffUtil.ItemCallback<CallLogItem>() {
+                         oldItem.specificNumber == newItem.specificNumber &&
+                         oldItem.specificType == newItem.specificType &&
+                         oldItem.isUnknownNumber == newItem.isUnknownNumber &&
+-                        oldItem.groupedCalls?.size == newItem.groupedCalls?.size
++                        oldItem.groupedCalls?.map { it.id to it.type } == newItem.groupedCalls?.map { it.id to it.type }
+             }
+             else -> false
+         }
+diff --git a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+--- a/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
++++ b/app/src/main/kotlin/org/fossify/phone/helpers/RecentsHelper.kt
+@@ -29,6 +29,7 @@ class RecentsHelper(private val context: Context) {
+                     val previousRecentCalls = previousRecents
+                         .flatMap { it.groupedCalls ?: listOf(it) }
+                         .map { it.copy(groupedCalls = null) }
++                        .sortedByDescending { it.startTS }
+                     val newerRecents = getRecents(
+                         contacts = contacts,
+                         selection = "${Calls.DATE} > ?",
+@@ -59,41 +60,30 @@ class RecentsHelper(private val context: Context) {
+     ) {
+         getRecentCalls(previousRecents, queryLimit) { recentCalls ->
+             callback(
+-                groupSubsequentCalls(calls = recentCalls)
++                groupCallsByContact(calls = recentCalls)
+             )
+         }
+     }
+     private fun shouldGroupCalls(callA: RecentCall, callB: RecentCall): Boolean {
+-        val differentSim = callA.simID != callB.simID
+-        val differentDay = callA.dayCode != callB.dayCode
+-        val namesAreBothRealAndDifferent =
+-            callA.name != callB.name &&
+-                    callA.name != callA.phoneNumber &&
+-                    callB.name != callB.phoneNumber
++        if (callA.simID != callB.simID) return false
+ 
+-        if (differentSim || differentDay || namesAreBothRealAndDifferent) return false
+         @Suppress("DEPRECATION")
+         return PhoneNumberUtils.compare(callA.phoneNumber, callB.phoneNumber)
+     }
+ 
+-    private fun groupSubsequentCalls(calls: List<RecentCall>): List<RecentCall> {
++    private fun groupCallsByContact(calls: List<RecentCall>): List<RecentCall> {
+         val result = mutableListOf<RecentCall>()
+-        if (calls.isEmpty()) return result
+-        var currentCall = calls[0]
+-        for (i in 1 until calls.size) {
+-            val nextCall = calls[i]
+-            if (shouldGroupCalls(currentCall, nextCall)) {
+-                if (currentCall.groupedCalls.isNullOrEmpty()) {
+-                    currentCall = currentCall.copy(groupedCalls = mutableListOf(currentCall))
+-                }
+-                currentCall.groupedCalls?.add(nextCall)
++        calls.forEach { call ->
++            val groupIndex = result.indexOfFirst { groupedCall -> shouldGroupCalls(groupedCall, call) }
++            if (groupIndex == -1) {
++                result += call
+             } else {
+-                result += currentCall
+-                currentCall = nextCall
++                val groupedCall = result[groupIndex]
++                val groupedCalls = groupedCall.groupedCalls?.toMutableList() ?: mutableListOf(groupedCall)
++                groupedCalls += call
++                result[groupIndex] = groupedCall.copy(groupedCalls = groupedCalls)
+             }
+         }
+-
+-        result.add(currentCall)
+         return result
+     }
+     @SuppressLint("NewApi")
+diff --git a/app/src/main/res/layout/item_recent_call.xml b/app/src/main/res/layout/item_recent_call.xml
+--- a/app/src/main/res/layout/item_recent_call.xml
++++ b/app/src/main/res/layout/item_recent_call.xml
+@@ -38,6 +38,32 @@
+         app:layout_constraintStart_toEndOf="@+id/item_recents_sim_image"
+         app:layout_constraintTop_toTopOf="@id/item_recents_date_time"
+         tools:tint="@color/color_missed_call" />
++    <ImageView
++        android:id="@+id/item_recents_type_secondary"
++        android:layout_width="0dp"
++        android:layout_height="0dp"
++        android:layout_marginStart="@dimen/tiny_margin"
++        android:padding="@dimen/tiny_margin"
++        android:src="@drawable/ic_call_received_vector"
++        android:visibility="gone"
++        app:layout_constraintBottom_toBottomOf="@+id/item_recents_date_time"
++        app:layout_constraintDimensionRatio="1:1"
++        app:layout_constraintStart_toEndOf="@+id/item_recents_type"
++        app:layout_constraintTop_toTopOf="@id/item_recents_date_time"
++        tools:visibility="visible" />
++    <ImageView
++        android:id="@+id/item_recents_type_tertiary"
++        android:layout_width="0dp"
++        android:layout_height="0dp"
++        android:layout_marginStart="@dimen/tiny_margin"
++        android:padding="@dimen/tiny_margin"
++        android:src="@drawable/ic_call_made_vector"
++        android:visibility="gone"
++        app:layout_constraintBottom_toBottomOf="@+id/item_recents_date_time"
++        app:layout_constraintDimensionRatio="1:1"
++        app:layout_constraintStart_toEndOf="@+id/item_recents_type_secondary"
++        app:layout_constraintTop_toTopOf="@id/item_recents_date_time"
++        tools:visibility="visible" />
+     <TextView
+         android:id="@+id/item_recents_date_time"
+         android:layout_width="wrap_content"
+@@ -46,7 +72,7 @@
+         android:maxLines="1"
+         android:textSize="@dimen/normal_text_size"
+         app:layout_constraintBottom_toBottomOf="parent"
+-        app:layout_constraintStart_toEndOf="@+id/item_recents_type"
++        app:layout_constraintStart_toEndOf="@+id/item_recents_type_tertiary"
+         app:layout_constraintTop_toBottomOf="@id/item_recents_name"
+         tools:text="4 July, 04:37 PM"
+         tools:textColor="@color/color_missed_call" />

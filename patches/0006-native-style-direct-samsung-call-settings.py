@@ -100,14 +100,25 @@ class MinimalCallSettingsActivity : Activity() {
         addRow("Andere Anrufeinstellungen") {
             openSamsungPage("OTHER_CALL_SETTINGS")
         }
-        addRow("Alle Samsung-Anrufeinstellungen") {
-            openSamsungPage(null)
-        }
-
-        setContentView(ScrollView(this).apply {
+        // Keep the list clear of the status and navigation bars on Android 15+
+        // (edge-to-edge enforcement), while remaining usable on older devices.
+        val content = ScrollView(this).apply {
             setFillViewport(true)
             addView(column)
-        })
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                setOnApplyWindowInsetsListener { view, insets ->
+                    val safeArea = insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars() or
+                            android.view.WindowInsets.Type.displayCutout()
+                    )
+                    view.setPadding(0, safeArea.top, 0, safeArea.bottom)
+                    insets
+                }
+            } else {
+                fitsSystemWindows = true
+            }
+        }
+        setContentView(content)
     }
 
     private fun openSamsungPage(rootKey: String?) {

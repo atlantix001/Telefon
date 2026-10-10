@@ -166,3 +166,16 @@ Fossify-Quellabschnitt entsprechenden Fixture getestet. Ein vollständiger
 1.11.1-GitHub-Checkout und die Android-APK-Kompilation waren in der
 Ausführungsumgebung nicht möglich; der GitHub-Actions-Workflow prüft den Patch
 bei der nächsten Ausführung am gepinnten Commit.
+
+## v0.2.11: Minimale Samsung-/Systemtelefon-Einstellungen in Fossify
+
+Nach 0004 stellt `@python 0005-telephony-shortcuts.py` eine eigene private
+Einstellungsseite über den Fossify-Einstellungen-Overflow bereit:
+**„Telefon- und Netzeinstellungen“**. Enthalten sind direkte Startmöglichkeiten
+für Androids Nummernsperrliste und WLAN-Anrufe sowie ein exportierter
+TelephonyUI-Haupteinstieg für Anruferinnerungen, Anrufe beantworten/beenden,
+Zusatzdienste und weitere Anrufeinstellungen. **Keine unbewiesenen Deep Links
+auf Samsung-Unterseiten** oder Dialer-spezifische Schnellnachrichten.
+Details und ADB-Testbefehle: `docs/TELEPHONYUI_MENU_PLAN.md`.
+Der tatsächliche Start auf dem Galaxy S25 und ein vollständiger Kotlin-Build
+sind noch nicht verifiziert und müssen über GitHub Actions plus Gerätetest folgen.

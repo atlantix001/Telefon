@@ -10,3 +10,8 @@ Die aktive Patchreihenfolge steht in `patches/series`. Der GitHub-Actions-Workfl
 
 
 Ein alter `0002-nonblocking-sim-cold-start.patch` aus v0.2.3 kann gelöscht werden. Falls er noch im Repository liegt, wird er nicht angewendet, solange er nicht in `patches/series` steht.
+
+- `@python 0005-telephony-shortcuts.py`: installs a small private call-settings
+  bridge in Fossify's Settings overflow. After 0004. Uses TelecomManager
+  blocked-number management, Android Wi-Fi calling action, and the exported
+  Samsung CallSettingsActivity (no non-exported fragments or signature APIs).

@@ -105,7 +105,7 @@ class MinimalCallSettingsActivity : Activity() {
         }
 
         setContentView(ScrollView(this).apply {
-            fillViewport = true
+            setFillViewport(true)
             addView(column)
         })
     }

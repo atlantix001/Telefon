@@ -3,3 +3,4 @@
 @python 0003-cross-day-contact-call-grouping.py
 @python 0004-hide-legacy-call-accounts.py
 @python 0005-telephony-shortcuts.py
+@python 0006-native-style-direct-samsung-call-settings.py

@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.10
+# Fossify Phone filtered — v0.2.12
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -88,7 +88,7 @@ GitHub Actions Workflow:
 
 Erwartetes APK nach dem aktuellen Build:
 
-`Fossify-Phone-filter-0.2.10-1.11.1.apk`
+`Fossify-Phone-filter-0.2.12-1.11.1.apk`
 
 ## Signing freeze
 
@@ -179,3 +179,24 @@ auf Samsung-Unterseiten** oder Dialer-spezifische Schnellnachrichten.
 Details und ADB-Testbefehle: `docs/TELEPHONYUI_MENU_PLAN.md`.
 Der tatsächliche Start auf dem Galaxy S25 und ein vollständiger Kotlin-Build
 sind noch nicht verifiziert und müssen über GitHub Actions plus Gerätetest folgen.
+
+
+## v0.2.12 – Direkte Samsung-Anrufeinstellungs-Unterseiten
+
+Der neue Patch `0006` baut auf dem getesteten v0.2.11 auf. Er ersetzt die
+Buttonliste und langen Hilfetexte durch schlanke, themeabhängige Einstellungszeilen.
+
+In Samsungs TelephonyUI 18.1.00 ist belegt, dass die exportierte
+`CallSettingsActivity` den Intent-String-Extra `root_key` liest. Die
+in fünf Logcat-Mitschnitten beobachteten Fragment-Schlüssel sind:
+
+- `CALL_ALERTS_AND_RINGTONES` (Anruferinnerungen und Klingelton)
+- `ANSWERING_AND_ENDING_CALLS` (Anrufe beantworten und beenden)
+- `SUPPLEMENTARY_SERVICE_COMMON` (Zusatzdienste)
+- `OTHER_CALL_SETTINGS` (Andere Anrufeinstellungen)
+- `CALL_LAYOUT` (Anrufinformationen; nicht verlinkt, da Samsung-InCall-UI-spezifisch)
+
+Die neue Fossify-Liste öffnet die ersten vier Unterseiten durch expliziten
+Activity-Intent mit `root_key`. Die externe Zielnavigation **muss auf dem
+Galaxy S25 noch validiert werden**, siehe `docs/TELEPHONYUI_DIRECT_KEYS.md`.
+Es wird bewusst keine versteckte Samsung-Activity gestartet.

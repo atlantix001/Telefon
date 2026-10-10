@@ -1,3 +1,4 @@
 0001-device-davx-sim-filter.patch
 0002-capability-based-address-books.patch
 @python 0003-cross-day-contact-call-grouping.py
+@python 0004-hide-legacy-call-accounts.py

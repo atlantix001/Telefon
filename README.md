@@ -1,4 +1,4 @@
-# Fossify Phone filtered — v0.2.8
+# Fossify Phone filtered — v0.2.10
 
 Private patch/build repository for Fossify Phone 1.11.1.
 
@@ -86,9 +86,9 @@ GitHub Actions Workflow:
 
 `.github/workflows/build.yml`
 
-Erwartetes APK:
+Erwartetes APK nach dem aktuellen Build:
 
-`Fossify-Phone-filter-0.2.8-1.11.1.apk`
+`Fossify-Phone-filter-0.2.10-1.11.1.apk`
 
 ## Signing freeze
 
@@ -145,3 +145,24 @@ v0.2.2 removes only `rawId = syntheticId`. The two custom source files remain ex
 ## v0.2.4 hotfix
 
 Der Coldstart-Fix ist jetzt direkt in `0001` integriert. Der Workflow verwendet `patches/series`; ein alter `0002` wird ignoriert.
+
+## v0.2.10: Fossify-Telefon / Android-Anrufkonten bereinigen (Teil 1)
+
+Patch `@python 0004-hide-legacy-call-accounts.py` entfernt **nur den Toolbar-Menüpunkt
+„Anrufkonten“ in Fossify Phone**. Dieser startet vorher die Android-Telecom-Oberfläche,
+in der unter anderem der tote Punkt „Aktive Konten“ erscheint. Es werden keinerlei
+PhoneAccount-Daten, SIM-Einstellungen oder Systempakete verändert.
+
+Die gewünschten **gezielten TelephonyUI-Verknüpfungen** folgen erst nach Festlegung
+der tatsächlich verwendeten Einstellungsseiten und Starttests auf dem Gerät.
+Die analysierte Samsung-APK (`com.samsung.android.app.telephonyui`) exportiert zwar
+`CallSettingsActivity` und `NetSettingsActivity`, zahlreiche Unterseiten sind aber
+**nicht exportiert** oder durch privilegierte Signatur-Berechtigungen geschützt.
+Ein Fossify-Link kann diese Android-Sicherheitsregeln nicht umgehen. TelephonyUI
+muss auf dem Gerät verbleiben, solange ihre Menüs aufgerufen werden sollen.
+
+**Prüfstatus:** Der Python-Patch ist mit einem synthetischen, dem bekannten
+Fossify-Quellabschnitt entsprechenden Fixture getestet. Ein vollständiger
+1.11.1-GitHub-Checkout und die Android-APK-Kompilation waren in der
+Ausführungsumgebung nicht möglich; der GitHub-Actions-Workflow prüft den Patch
+bei der nächsten Ausführung am gepinnten Commit.
